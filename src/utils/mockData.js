@@ -98,10 +98,10 @@ const generatePayment = (fromAccountId, toBeneficiaryId, amount, paymentId = nul
 /**
  * Generate mock beneficiary data
  */
-const generateBeneficiary = (beneficiaryId = null) => {
+const generateBeneficiary = (beneficiaryId = null, beneficiaryType = null) => {
   const id = beneficiaryId || `ben-${uuidv4().substring(0, 13)}`;
   const types = ['INDIVIDUAL', 'BUSINESS'];
-  const type = types[Math.floor(Math.random() * types.length)];
+  const type = beneficiaryType || types[Math.floor(Math.random() * types.length)];
   
   const names = type === 'INDIVIDUAL' 
     ? ['John Smith', 'Sarah Johnson', 'Michael Brown', 'Emma Wilson', 'David Taylor']

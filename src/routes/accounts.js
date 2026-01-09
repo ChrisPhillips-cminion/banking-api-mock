@@ -6,12 +6,19 @@ const { createError } = require('../middleware/errorHandler');
 // In-memory storage for demo purposes
 const accounts = {};
 
-// Initialize with some mock accounts
-for (let i = 0; i < 5; i++) {
-  const types = ['CHECKING', 'SAVINGS', 'BUSINESS'];
-  const account = generateAccount(null, types[i % types.length]);
+// Initialize with some mock accounts with predictable IDs
+const predefinedAccounts = [
+  { id: 'acc-123456789', type: 'CHECKING' },
+  { id: 'acc-987654321', type: 'SAVINGS' },
+  { id: 'acc-111222333', type: 'BUSINESS' },
+  { id: 'acc-444555666', type: 'CHECKING' },
+  { id: 'acc-777888999', type: 'SAVINGS' }
+];
+
+predefinedAccounts.forEach(({ id, type }) => {
+  const account = generateAccount(id, type);
   accounts[account.accountId] = account;
-}
+});
 
 /**
  * GET /accounts
@@ -53,6 +60,11 @@ router.get('/', (req, res) => {
 router.get('/:accountId', (req, res, next) => {
   const { accountId } = req.params;
   
+  // Validate account ID format
+  if (!accountId.match(/^acc-\d{9}$/)) {
+    return next(createError(400, 'INVALID_ACCOUNT_ID', 'Invalid account ID format. Expected format: acc-XXXXXXXXX'));
+  }
+  
   const account = accounts[accountId];
   
   if (!account) {
@@ -68,6 +80,11 @@ router.get('/:accountId', (req, res, next) => {
  */
 router.get('/:accountId/balance', (req, res, next) => {
   const { accountId } = req.params;
+  
+  // Validate account ID format
+  if (!accountId.match(/^acc-\d{9}$/)) {
+    return next(createError(400, 'INVALID_ACCOUNT_ID', 'Invalid account ID format. Expected format: acc-XXXXXXXXX'));
+  }
   
   const account = accounts[accountId];
   
@@ -93,6 +110,11 @@ router.get('/:accountId/balance', (req, res, next) => {
 router.get('/:accountId/transactions', (req, res, next) => {
   const { accountId } = req.params;
   const { page = 1, limit = 20, startDate, endDate } = req.query;
+  
+  // Validate account ID format
+  if (!accountId.match(/^acc-\d{9}$/)) {
+    return next(createError(400, 'INVALID_ACCOUNT_ID', 'Invalid account ID format. Expected format: acc-XXXXXXXXX'));
+  }
   
   const account = accounts[accountId];
   
@@ -125,6 +147,11 @@ router.get('/:accountId/transactions', (req, res, next) => {
 router.get('/:accountId/statements', (req, res, next) => {
   const { accountId } = req.params;
   const { year, month } = req.query;
+  
+  // Validate account ID format
+  if (!accountId.match(/^acc-\d{9}$/)) {
+    return next(createError(400, 'INVALID_ACCOUNT_ID', 'Invalid account ID format. Expected format: acc-XXXXXXXXX'));
+  }
   
   const account = accounts[accountId];
   

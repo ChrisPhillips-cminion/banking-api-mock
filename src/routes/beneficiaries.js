@@ -6,11 +6,19 @@ const { createError } = require('../middleware/errorHandler');
 // In-memory storage for demo purposes
 const beneficiaries = {};
 
-// Initialize with some mock beneficiaries
-for (let i = 0; i < 10; i++) {
-  const beneficiary = generateBeneficiary();
+// Initialize with some mock beneficiaries with predictable IDs
+const predefinedBeneficiaries = [
+  { id: 'ben-987654321', type: 'INDIVIDUAL' },
+  { id: 'ben-111222333', type: 'BUSINESS' },
+  { id: 'ben-444555666', type: 'INDIVIDUAL' },
+  { id: 'ben-777888999', type: 'BUSINESS' },
+  { id: 'ben-123123123', type: 'INDIVIDUAL' }
+];
+
+predefinedBeneficiaries.forEach(({ id, type }) => {
+  const beneficiary = generateBeneficiary(id, type);
   beneficiaries[beneficiary.beneficiaryId] = beneficiary;
-}
+});
 
 /**
  * GET /beneficiaries

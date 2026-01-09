@@ -6,6 +6,18 @@ const { createError } = require('../middleware/errorHandler');
 // In-memory storage for demo purposes
 const payments = {};
 
+// Initialize with some mock payments with predictable IDs
+const predefinedPayments = [
+  { id: 'pay-123456789', fromAccount: 'acc-123456789', toBeneficiary: 'ben-987654321', amount: 250.00 },
+  { id: 'pay-987654321', fromAccount: 'acc-987654321', toBeneficiary: 'ben-111222333', amount: 500.00 },
+  { id: 'pay-111222333', fromAccount: 'acc-111222333', toBeneficiary: 'ben-444555666', amount: 150.00 }
+];
+
+predefinedPayments.forEach(({ id, fromAccount, toBeneficiary, amount }) => {
+  const payment = generatePayment(fromAccount, toBeneficiary, amount, id);
+  payments[payment.paymentId] = payment;
+});
+
 /**
  * POST /payments
  * Create a new payment
