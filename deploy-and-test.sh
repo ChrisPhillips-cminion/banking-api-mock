@@ -229,7 +229,21 @@ print_step "Starting new build..."
 build_output=$(oc start-build "$BUILD_CONFIG" 2>&1)
 
 if [ $? -eq 0 ]; then
-    build_name=$(echo "$build_output" | grep -oE 'build.*started' | awk '{print $2}' | tr -d '"')
+    # Extract build name - format is usually "build.build.openshift.io/banking-api-mock-X created"
+    # or "build/banking-api-mock-X"
+    build_name=$(echo "$build_output" | grep -oE "${BUILD_CONFIG}-[0-9]+" | head -1)
+    
+    if [ -z "$build_name" ]; then
+        # Try alternative format
+        build_name=$(echo "$build_output" | awk '{print $1}' | grep -oE "${BUILD_CONFIG}-[0-9]+")
+    fi
+    
+    if [ -z "$build_name" ]; then
+        print_error "Could not parse build name from output:"
+        echo "$build_output"
+        exit 1
+    fi
+    
     print_success "Build started: $build_name"
     
     # Follow build logs in background
