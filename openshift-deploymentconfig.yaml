@@ -1,6 +1,6 @@
 ---
-apiVersion: image.openshift.io/v1
-kind: ImageStream
+apiVersion: apps.openshift.io/v1
+kind: DeploymentConfig
 metadata:
   name: banking-api-mock
   labels:
@@ -8,62 +8,23 @@ metadata:
     app.kubernetes.io/name: banking-api-mock
     app.kubernetes.io/component: backend
 spec:
-  lookupPolicy:
-    local: false
-
----
-apiVersion: build.openshift.io/v1
-kind: BuildConfig
-metadata:
-  name: banking-api-mock
-  labels:
-    app: banking-api-mock
-    app.kubernetes.io/name: banking-api-mock
-    app.kubernetes.io/component: backend
-spec:
-  output:
-    to:
-      kind: ImageStreamTag
-      name: banking-api-mock:latest
-  source:
-    type: Git
-    git:
-      uri: https://github.com/ChrisPhillips-cminion/banking-api-mock.git
-      ref: main
-    contextDir: .
-  strategy:
-    type: Docker
-    dockerStrategy:
-      dockerfilePath: Dockerfile
-      from:
-        kind: DockerImage
-        name: node:18-alpine
-  triggers:
-    - type: ConfigChange
-    - type: ImageChange
-      imageChange: {}
-  runPolicy: Serial
-  successfulBuildsHistoryLimit: 3
-  failedBuildsHistoryLimit: 3
-
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: banking-api-mock
-  labels:
-    app: banking-api-mock
-    app.kubernetes.io/name: banking-api-mock
-    app.kubernetes.io/component: backend
-spec:
-  replicas: 2
+  replicas: 1
   selector:
-    matchLabels:
-      app: banking-api-mock
+    app: banking-api-mock
+    deploymentconfig: banking-api-mock
+  strategy:
+    type: Rolling
+    rollingParams:
+      updatePeriodSeconds: 1
+      intervalSeconds: 1
+      timeoutSeconds: 600
+      maxUnavailable: 25%
+      maxSurge: 25%
   template:
     metadata:
       labels:
         app: banking-api-mock
+        deploymentconfig: banking-api-mock
         app.kubernetes.io/name: banking-api-mock
         app.kubernetes.io/component: backend
     spec:
@@ -115,6 +76,16 @@ spec:
             - ALL
           seccompProfile:
             type: RuntimeDefault
+  triggers:
+  - type: ConfigChange
+  - type: ImageChange
+    imageChangeParams:
+      automatic: true
+      containerNames:
+      - banking-api-mock
+      from:
+        kind: ImageStreamTag
+        name: banking-api-mock:latest
 
 ---
 apiVersion: v1
@@ -134,6 +105,7 @@ spec:
     name: http
   selector:
     app: banking-api-mock
+    deploymentconfig: banking-api-mock
 
 ---
 apiVersion: route.openshift.io/v1
