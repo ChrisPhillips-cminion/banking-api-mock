@@ -1,0 +1,1853 @@
+openapi: 3.0.3
+info:
+  title: Banking Services API
+  version: 1.0.0
+  description: |
+    # Banking Services API
+    
+    A comprehensive RESTful API for banking operations including account management, 
+    transactions, payments, and beneficiary management.
+    
+    ## Features
+    - Account management and balance inquiries
+    - Transaction history and search
+    - Domestic and international payments
+    - Beneficiary management
+    - Account statements generation
+    
+    ## Security
+    This API uses OAuth 2.0 for authentication and authorization. All endpoints 
+    require a valid access token except for the health check endpoint.
+    
+    ## Rate Limiting
+    Rate limits are enforced based on your subscription tier:
+    - Bronze: 10 requests per minute
+    - Silver: 100 requests per minute
+    - Gold: 1000 requests per minute
+    
+    ## Support
+    For API support, contact: api-support@bankingservices.com
+  contact:
+    name: API Support Team
+    email: api-support@bankingservices.com
+    url: https://developer.bankingservices.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: https://www.bankingservices.com/terms
+
+servers:
+  - url: https://api.bankingservices.com/v1
+    description: Production server
+  - url: https://sandbox-api.bankingservices.com/v1
+    description: Sandbox server for testing
+
+# API Connect v10 Configuration
+x-ibm-configuration:
+  enforced: true
+  testable: true
+  phase: realized
+  cors:
+    enabled: true
+  assembly:
+    execute:
+      - rate-limit:
+          version: 2.0.0
+          title: rate-limit
+          rate-limit:
+            - condition: "($operationID() = 'getAccounts')"
+              value: 100/1minute
+            - condition: "($operationID() = 'createPayment')"
+              value: 10/1minute
+            - default: 50/1minute
+      - gatewayscript:
+          version: 2.0.0
+          title: request-transform
+          source: |
+            // Add correlation ID if not present
+            if (!context.get('message.headers.x-correlation-id')) {
+              context.set('message.headers.x-correlation-id', context.get('request.id'));
+            }
+            // Add timestamp
+            context.set('message.headers.x-request-timestamp', new Date().toISOString());
+      - invoke:
+          version: 2.0.0
+          title: invoke-backend
+          target-url: $(backend-url)$(request.path)
+          timeout: 60
+          verb: keep
+          cache-response: protocol
+          cache-ttl: 900
+          stop-on-error:
+            - ConnectionError
+            - OperationError
+      - gatewayscript:
+          version: 2.0.0
+          title: response-transform
+          source: |
+            // Add response headers
+            context.set('message.headers.x-response-timestamp', new Date().toISOString());
+            context.set('message.headers.x-api-version', '1.0.0');
+    catch:
+      - errors:
+          - ConnectionError
+          - OperationError
+        execute:
+          - gatewayscript:
+              version: 2.0.0
+              title: error-handler
+              source: |
+                var errorResponse = {
+                  error: {
+                    code: 'GATEWAY_ERROR',
+                    message: 'An error occurred while processing your request',
+                    timestamp: new Date().toISOString(),
+                    correlationId: context.get('message.headers.x-correlation-id')
+                  }
+                };
+                context.message.statusCode = '500';
+                context.message.body.write(JSON.stringify(errorResponse));
+  gateway: datapower-api-gateway
+  properties:
+    backend-url:
+      value: https://backend.bankingservices.com
+      description: Backend service URL
+      encoded: false
+  catalogs:
+    sandbox:
+      properties:
+        backend-url: https://sandbox-backend.bankingservices.com
+    production:
+      properties:
+        backend-url: https://backend.bankingservices.com
+
+security:
+  - oauth2ClientCredentials: []
+  - oauth2AuthCode: []
+  - apiKey: []
+
+tags:
+  - name: Accounts
+    description: Account management operations
+  - name: Transactions
+    description: Transaction history and details
+  - name: Payments
+    description: Payment processing operations
+  - name: Beneficiaries
+    description: Beneficiary management
+  - name: Statements
+    description: Account statement operations
+  - name: Health
+    description: API health and status
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check endpoint
+      description: Check API availability and status
+      operationId: healthCheck
+      security: []
+      x-ibm-configuration:
+        assembly:
+          execute:
+            - gatewayscript:
+                version: 2.0.0
+                title: health-check
+                source: |
+                  context.message.body.write(JSON.stringify({
+                    status: 'UP',
+                    timestamp: new Date().toISOString(),
+                    version: '1.0.0'
+                  }));
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: UP
+                timestamp: '2026-01-09T16:45:00Z'
+                version: '1.0.0'
+
+  /accounts:
+    get:
+      tags:
+        - Accounts
+      summary: List all accounts
+      description: Retrieve a list of all accounts for the authenticated customer
+      operationId: getAccounts
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: accountType
+          in: query
+          description: Filter by account type
+          schema:
+            type: string
+            enum: [CHECKING, SAVINGS, CREDIT, INVESTMENT]
+        - name: status
+          in: query
+          description: Filter by account status
+          schema:
+            type: string
+            enum: [ACTIVE, INACTIVE, CLOSED, SUSPENDED]
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountListResponse'
+              example:
+                accounts:
+                  - accountId: ACC-123456789
+                    accountNumber: '****1234'
+                    accountType: CHECKING
+                    currency: USD
+                    status: ACTIVE
+                    nickname: Main Checking
+                    openedDate: '2020-01-15'
+                  - accountId: ACC-987654321
+                    accountNumber: '****5678'
+                    accountType: SAVINGS
+                    currency: USD
+                    status: ACTIVE
+                    nickname: Emergency Fund
+                    openedDate: '2020-01-15'
+                pagination:
+                  page: 1
+                  limit: 10
+                  totalPages: 1
+                  totalRecords: 2
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /accounts/{accountId}:
+    get:
+      tags:
+        - Accounts
+      summary: Get account details
+      description: Retrieve detailed information for a specific account
+      operationId: getAccountById
+      parameters:
+        - $ref: '#/components/parameters/AccountIdParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountDetails'
+              example:
+                accountId: ACC-123456789
+                accountNumber: '****1234'
+                fullAccountNumber: '1234567890123456'
+                accountType: CHECKING
+                currency: USD
+                status: ACTIVE
+                nickname: Main Checking
+                openedDate: '2020-01-15'
+                branch:
+                  branchId: BR-001
+                  branchName: Downtown Branch
+                  branchCode: DTN001
+                availableBalance: 5432.10
+                currentBalance: 5432.10
+                overdraftLimit: 1000.00
+                interestRate: 0.01
+                lastTransactionDate: '2026-01-09T10:30:00Z'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /accounts/{accountId}/balance:
+    get:
+      tags:
+        - Accounts
+      summary: Get account balance
+      description: Retrieve current balance information for a specific account
+      operationId: getAccountBalance
+      parameters:
+        - $ref: '#/components/parameters/AccountIdParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+              example:
+                accountId: ACC-123456789
+                currency: USD
+                availableBalance: 5432.10
+                currentBalance: 5432.10
+                pendingBalance: 0.00
+                overdraftLimit: 1000.00
+                lastUpdated: '2026-01-09T16:45:00Z'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /transactions:
+    get:
+      tags:
+        - Transactions
+      summary: Search transactions
+      description: Search and filter transactions across all accounts
+      operationId: searchTransactions
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: fromDate
+          in: query
+          description: Start date for transaction search (ISO 8601)
+          schema:
+            type: string
+            format: date
+          example: '2026-01-01'
+        - name: toDate
+          in: query
+          description: End date for transaction search (ISO 8601)
+          schema:
+            type: string
+            format: date
+          example: '2026-01-09'
+        - name: minAmount
+          in: query
+          description: Minimum transaction amount
+          schema:
+            type: number
+            format: double
+        - name: maxAmount
+          in: query
+          description: Maximum transaction amount
+          schema:
+            type: number
+            format: double
+        - name: transactionType
+          in: query
+          description: Filter by transaction type
+          schema:
+            type: string
+            enum: [DEBIT, CREDIT, TRANSFER, PAYMENT, FEE, INTEREST]
+        - name: status
+          in: query
+          description: Filter by transaction status
+          schema:
+            type: string
+            enum: [COMPLETED, PENDING, FAILED, CANCELLED]
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionListResponse'
+              example:
+                transactions:
+                  - transactionId: TXN-20260109-001
+                    accountId: ACC-123456789
+                    transactionType: DEBIT
+                    amount: 125.50
+                    currency: USD
+                    description: Coffee Shop Purchase
+                    transactionDate: '2026-01-09T10:30:00Z'
+                    status: COMPLETED
+                    balance: 5432.10
+                  - transactionId: TXN-20260108-045
+                    accountId: ACC-123456789
+                    transactionType: CREDIT
+                    amount: 2500.00
+                    currency: USD
+                    description: Salary Deposit
+                    transactionDate: '2026-01-08T09:00:00Z'
+                    status: COMPLETED
+                    balance: 5557.60
+                pagination:
+                  page: 1
+                  limit: 10
+                  totalPages: 5
+                  totalRecords: 48
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /transactions/{transactionId}:
+    get:
+      tags:
+        - Transactions
+      summary: Get transaction details
+      description: Retrieve detailed information for a specific transaction
+      operationId: getTransactionById
+      parameters:
+        - $ref: '#/components/parameters/TransactionIdParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionDetails'
+              example:
+                transactionId: TXN-20260109-001
+                accountId: ACC-123456789
+                transactionType: DEBIT
+                amount: 125.50
+                currency: USD
+                description: Coffee Shop Purchase
+                transactionDate: '2026-01-09T10:30:00Z'
+                valueDate: '2026-01-09'
+                status: COMPLETED
+                balance: 5432.10
+                merchant:
+                  name: Downtown Coffee Shop
+                  category: FOOD_AND_DINING
+                  location: New York, NY
+                metadata:
+                  channel: CARD
+                  cardLast4: '1234'
+                  authorizationCode: AUTH123456
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /accounts/{accountId}/transactions:
+    get:
+      tags:
+        - Transactions
+      summary: Get account transactions
+      description: Retrieve transaction history for a specific account
+      operationId: getAccountTransactions
+      parameters:
+        - $ref: '#/components/parameters/AccountIdParam'
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: fromDate
+          in: query
+          description: Start date for transaction history (ISO 8601)
+          schema:
+            type: string
+            format: date
+        - name: toDate
+          in: query
+          description: End date for transaction history (ISO 8601)
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /payments:
+    post:
+      tags:
+        - Payments
+      summary: Create a payment
+      description: Initiate a new payment transaction (domestic or international)
+      operationId: createPayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequest'
+            example:
+              fromAccountId: ACC-123456789
+              toBeneficiaryId: BEN-987654321
+              amount: 500.00
+              currency: USD
+              paymentType: DOMESTIC
+              reference: Invoice #12345
+              scheduledDate: '2026-01-10'
+              urgency: STANDARD
+      responses:
+        '201':
+          description: Payment created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+              example:
+                paymentId: PAY-20260109-001
+                status: PENDING
+                fromAccountId: ACC-123456789
+                toBeneficiaryId: BEN-987654321
+                amount: 500.00
+                currency: USD
+                paymentType: DOMESTIC
+                reference: Invoice #12345
+                scheduledDate: '2026-01-10'
+                createdAt: '2026-01-09T16:45:00Z'
+                estimatedCompletionDate: '2026-01-10T12:00:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntityError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /payments/{paymentId}:
+    get:
+      tags:
+        - Payments
+      summary: Get payment status
+      description: Retrieve the current status and details of a payment
+      operationId: getPaymentById
+      parameters:
+        - $ref: '#/components/parameters/PaymentIdParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+              example:
+                paymentId: PAY-20260109-001
+                status: COMPLETED
+                fromAccountId: ACC-123456789
+                toBeneficiaryId: BEN-987654321
+                amount: 500.00
+                currency: USD
+                paymentType: DOMESTIC
+                reference: Invoice #12345
+                scheduledDate: '2026-01-10'
+                createdAt: '2026-01-09T16:45:00Z'
+                completedAt: '2026-01-10T09:30:00Z'
+                transactionId: TXN-20260110-023
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /payments/{paymentId}/cancel:
+    put:
+      tags:
+        - Payments
+      summary: Cancel a payment
+      description: Cancel a pending or scheduled payment
+      operationId: cancelPayment
+      parameters:
+        - $ref: '#/components/parameters/PaymentIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  description: Reason for cancellation
+                  minLength: 10
+                  maxLength: 500
+            example:
+              reason: Payment no longer required due to invoice cancellation
+      responses:
+        '200':
+          description: Payment cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+              example:
+                paymentId: PAY-20260109-001
+                status: CANCELLED
+                fromAccountId: ACC-123456789
+                toBeneficiaryId: BEN-987654321
+                amount: 500.00
+                currency: USD
+                paymentType: DOMESTIC
+                reference: Invoice #12345
+                scheduledDate: '2026-01-10'
+                createdAt: '2026-01-09T16:45:00Z'
+                cancelledAt: '2026-01-09T17:00:00Z'
+                cancellationReason: Payment no longer required due to invoice cancellation
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntityError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /beneficiaries:
+    get:
+      tags:
+        - Beneficiaries
+      summary: List all beneficiaries
+      description: Retrieve a list of all registered beneficiaries
+      operationId: getBeneficiaries
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: beneficiaryType
+          in: query
+          description: Filter by beneficiary type
+          schema:
+            type: string
+            enum: [INDIVIDUAL, BUSINESS]
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BeneficiaryListResponse'
+              example:
+                beneficiaries:
+                  - beneficiaryId: BEN-987654321
+                    beneficiaryType: INDIVIDUAL
+                    name: John Smith
+                    nickname: John - Rent
+                    accountNumber: '****9876'
+                    bankName: First National Bank
+                    status: ACTIVE
+                    createdAt: '2025-06-15T10:00:00Z'
+                  - beneficiaryId: BEN-123456789
+                    beneficiaryType: BUSINESS
+                    name: Acme Corporation
+                    nickname: Acme - Supplies
+                    accountNumber: '****5432'
+                    bankName: Business Bank
+                    status: ACTIVE
+                    createdAt: '2025-08-20T14:30:00Z'
+                pagination:
+                  page: 1
+                  limit: 10
+                  totalPages: 1
+                  totalRecords: 2
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags:
+        - Beneficiaries
+      summary: Add a beneficiary
+      description: Register a new beneficiary for payments
+      operationId: createBeneficiary
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BeneficiaryRequest'
+            example:
+              beneficiaryType: INDIVIDUAL
+              name: Jane Doe
+              nickname: Jane - Utilities
+              accountNumber: '1234567890123456'
+              routingNumber: '021000021'
+              bankName: Second National Bank
+              bankAddress:
+                street: 456 Bank Street
+                city: Boston
+                state: MA
+                postalCode: '02101'
+                country: US
+              email: jane.doe@example.com
+              phone: '+1-555-0123'
+      responses:
+        '201':
+          description: Beneficiary created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BeneficiaryDetails'
+              example:
+                beneficiaryId: BEN-456789123
+                beneficiaryType: INDIVIDUAL
+                name: Jane Doe
+                nickname: Jane - Utilities
+                accountNumber: '****3456'
+                routingNumber: '021000021'
+                bankName: Second National Bank
+                bankAddress:
+                  street: 456 Bank Street
+                  city: Boston
+                  state: MA
+                  postalCode: '02101'
+                  country: US
+                email: jane.doe@example.com
+                phone: '+1-555-0123'
+                status: PENDING_VERIFICATION
+                createdAt: '2026-01-09T16:45:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntityError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /beneficiaries/{beneficiaryId}:
+    get:
+      tags:
+        - Beneficiaries
+      summary: Get beneficiary details
+      description: Retrieve detailed information for a specific beneficiary
+      operationId: getBeneficiaryById
+      parameters:
+        - $ref: '#/components/parameters/BeneficiaryIdParam'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BeneficiaryDetails'
+              example:
+                beneficiaryId: BEN-987654321
+                beneficiaryType: INDIVIDUAL
+                name: John Smith
+                nickname: John - Rent
+                accountNumber: '****9876'
+                routingNumber: '021000022'
+                bankName: First National Bank
+                bankAddress:
+                  street: 123 Main Street
+                  city: New York
+                  state: NY
+                  postalCode: '10001'
+                  country: US
+                email: john.smith@example.com
+                phone: '+1-555-0124'
+                status: ACTIVE
+                createdAt: '2025-06-15T10:00:00Z'
+                lastUsed: '2026-01-05T14:20:00Z'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    put:
+      tags:
+        - Beneficiaries
+      summary: Update beneficiary
+      description: Update beneficiary information
+      operationId: updateBeneficiary
+      parameters:
+        - $ref: '#/components/parameters/BeneficiaryIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BeneficiaryUpdateRequest'
+            example:
+              nickname: John - Monthly Rent
+              email: john.smith.new@example.com
+              phone: '+1-555-9999'
+      responses:
+        '200':
+          description: Beneficiary updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BeneficiaryDetails'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntityError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      tags:
+        - Beneficiaries
+      summary: Delete beneficiary
+      description: Remove a beneficiary from the registered list
+      operationId: deleteBeneficiary
+      parameters:
+        - $ref: '#/components/parameters/BeneficiaryIdParam'
+      responses:
+        '204':
+          description: Beneficiary deleted successfully
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          description: Cannot delete beneficiary with pending payments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: BENEFICIARY_IN_USE
+                  message: Cannot delete beneficiary with pending payments
+                  timestamp: '2026-01-09T16:45:00Z'
+                  correlationId: corr-123456
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /accounts/{accountId}/statements:
+    get:
+      tags:
+        - Statements
+      summary: List account statements
+      description: Retrieve a list of available statements for an account
+      operationId: getAccountStatements
+      parameters:
+        - $ref: '#/components/parameters/AccountIdParam'
+        - name: year
+          in: query
+          description: Filter by year
+          schema:
+            type: integer
+            minimum: 2000
+            maximum: 2100
+        - name: month
+          in: query
+          description: Filter by month (1-12)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatementListResponse'
+              example:
+                statements:
+                  - statementId: STMT-202601-001
+                    accountId: ACC-123456789
+                    period:
+                      startDate: '2026-01-01'
+                      endDate: '2026-01-31'
+                    generatedDate: '2026-02-01T00:00:00Z'
+                    format: PDF
+                    size: 245678
+                    status: AVAILABLE
+                  - statementId: STMT-202512-001
+                    accountId: ACC-123456789
+                    period:
+                      startDate: '2025-12-01'
+                      endDate: '2025-12-31'
+                    generatedDate: '2026-01-01T00:00:00Z'
+                    format: PDF
+                    size: 198432
+                    status: AVAILABLE
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /statements/{statementId}/download:
+    get:
+      tags:
+        - Statements
+      summary: Download statement
+      description: Download a statement file in the specified format
+      operationId: downloadStatement
+      parameters:
+        - $ref: '#/components/parameters/StatementIdParam'
+        - name: format
+          in: query
+          description: Desired format for the statement
+          schema:
+            type: string
+            enum: [PDF, CSV]
+            default: PDF
+      responses:
+        '200':
+          description: Statement file
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '429':
+          $ref: '#/components/responses/RateLimitError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    oauth2ClientCredentials:
+      type: oauth2
+      description: OAuth 2.0 Client Credentials flow for server-to-server authentication
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.bankingservices.com/oauth2/token
+          scopes:
+            accounts:read: Read account information
+            accounts:write: Modify account information
+            transactions:read: Read transaction history
+            payments:read: Read payment information
+            payments:write: Create and manage payments
+            beneficiaries:read: Read beneficiary information
+            beneficiaries:write: Manage beneficiaries
+            statements:read: Access account statements
+      x-ibm-configuration:
+        provider: oauth-provider
+        
+    oauth2AuthCode:
+      type: oauth2
+      description: OAuth 2.0 Authorization Code flow for user authentication
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.bankingservices.com/oauth2/authorize
+          tokenUrl: https://auth.bankingservices.com/oauth2/token
+          scopes:
+            accounts:read: Read account information
+            accounts:write: Modify account information
+            transactions:read: Read transaction history
+            payments:read: Read payment information
+            payments:write: Create and manage payments
+            beneficiaries:read: Read beneficiary information
+            beneficiaries:write: Manage beneficiaries
+            statements:read: Access account statements
+      x-ibm-configuration:
+        provider: oauth-provider
+        
+    apiKey:
+      type: apiKey
+      description: API key for application identification
+      name: X-API-Key
+      in: header
+      x-ibm-configuration:
+        key-type: client_id
+
+  parameters:
+    AccountIdParam:
+      name: accountId
+      in: path
+      required: true
+      description: Unique identifier for the account
+      schema:
+        type: string
+        pattern: '^ACC-[0-9]{9}$'
+      example: ACC-123456789
+
+    TransactionIdParam:
+      name: transactionId
+      in: path
+      required: true
+      description: Unique identifier for the transaction
+      schema:
+        type: string
+        pattern: '^TXN-[0-9]{8}-[0-9]{3}$'
+      example: TXN-20260109-001
+
+    PaymentIdParam:
+      name: paymentId
+      in: path
+      required: true
+      description: Unique identifier for the payment
+      schema:
+        type: string
+        pattern: '^PAY-[0-9]{8}-[0-9]{3}$'
+      example: PAY-20260109-001
+
+    BeneficiaryIdParam:
+      name: beneficiaryId
+      in: path
+      required: true
+      description: Unique identifier for the beneficiary
+      schema:
+        type: string
+        pattern: '^BEN-[0-9]{9}$'
+      example: BEN-987654321
+
+    StatementIdParam:
+      name: statementId
+      in: path
+      required: true
+      description: Unique identifier for the statement
+      schema:
+        type: string
+        pattern: '^STMT-[0-9]{6}-[0-9]{3}$'
+      example: STMT-202601-001
+
+    PageParam:
+      name: page
+      in: query
+      description: Page number for pagination (1-based)
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      example: 1
+
+    LimitParam:
+      name: limit
+      in: query
+      description: Number of items per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+      example: 10
+
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - version
+      properties:
+        status:
+          type: string
+          enum: [UP, DOWN, DEGRADED]
+          description: Current API status
+        timestamp:
+          type: string
+          format: date-time
+          description: Current server timestamp
+        version:
+          type: string
+          description: API version
+
+    AccountListResponse:
+      type: object
+      required:
+        - accounts
+        - pagination
+      properties:
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountSummary'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    AccountSummary:
+      type: object
+      required:
+        - accountId
+        - accountNumber
+        - accountType
+        - currency
+        - status
+      properties:
+        accountId:
+          type: string
+          description: Unique account identifier
+          example: ACC-123456789
+        accountNumber:
+          type: string
+          description: Masked account number
+          example: '****1234'
+        accountType:
+          type: string
+          enum: [CHECKING, SAVINGS, CREDIT, INVESTMENT]
+          description: Type of account
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: ISO 4217 currency code
+          example: USD
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, CLOSED, SUSPENDED]
+          description: Current account status
+        nickname:
+          type: string
+          description: User-defined account nickname
+          maxLength: 50
+        openedDate:
+          type: string
+          format: date
+          description: Date when account was opened
+
+    AccountDetails:
+      allOf:
+        - $ref: '#/components/schemas/AccountSummary'
+        - type: object
+          required:
+            - fullAccountNumber
+            - availableBalance
+            - currentBalance
+          properties:
+            fullAccountNumber:
+              type: string
+              description: Full account number (visible only to account owner)
+              example: '1234567890123456'
+            branch:
+              $ref: '#/components/schemas/Branch'
+            availableBalance:
+              type: number
+              format: double
+              description: Available balance for transactions
+              example: 5432.10
+            currentBalance:
+              type: number
+              format: double
+              description: Current account balance
+              example: 5432.10
+            overdraftLimit:
+              type: number
+              format: double
+              description: Overdraft limit (if applicable)
+              example: 1000.00
+            interestRate:
+              type: number
+              format: double
+              description: Annual interest rate (as decimal)
+              example: 0.01
+            lastTransactionDate:
+              type: string
+              format: date-time
+              description: Date and time of last transaction
+
+    Branch:
+      type: object
+      required:
+        - branchId
+        - branchName
+        - branchCode
+      properties:
+        branchId:
+          type: string
+          description: Unique branch identifier
+        branchName:
+          type: string
+          description: Branch name
+        branchCode:
+          type: string
+          description: Branch code
+
+    BalanceResponse:
+      type: object
+      required:
+        - accountId
+        - currency
+        - availableBalance
+        - currentBalance
+        - lastUpdated
+      properties:
+        accountId:
+          type: string
+          description: Account identifier
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: ISO 4217 currency code
+        availableBalance:
+          type: number
+          format: double
+          description: Available balance for transactions
+        currentBalance:
+          type: number
+          format: double
+          description: Current account balance
+        pendingBalance:
+          type: number
+          format: double
+          description: Pending transactions total
+        overdraftLimit:
+          type: number
+          format: double
+          description: Overdraft limit
+        lastUpdated:
+          type: string
+          format: date-time
+          description: Last balance update timestamp
+
+    TransactionListResponse:
+      type: object
+      required:
+        - transactions
+        - pagination
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionSummary'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    TransactionSummary:
+      type: object
+      required:
+        - transactionId
+        - accountId
+        - transactionType
+        - amount
+        - currency
+        - transactionDate
+        - status
+      properties:
+        transactionId:
+          type: string
+          description: Unique transaction identifier
+        accountId:
+          type: string
+          description: Associated account identifier
+        transactionType:
+          type: string
+          enum: [DEBIT, CREDIT, TRANSFER, PAYMENT, FEE, INTEREST]
+          description: Type of transaction
+        amount:
+          type: number
+          format: double
+          description: Transaction amount
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: ISO 4217 currency code
+        description:
+          type: string
+          description: Transaction description
+        transactionDate:
+          type: string
+          format: date-time
+          description: Transaction date and time
+        status:
+          type: string
+          enum: [COMPLETED, PENDING, FAILED, CANCELLED]
+          description: Transaction status
+        balance:
+          type: number
+          format: double
+          description: Account balance after transaction
+
+    TransactionDetails:
+      allOf:
+        - $ref: '#/components/schemas/TransactionSummary'
+        - type: object
+          properties:
+            valueDate:
+              type: string
+              format: date
+              description: Value date for the transaction
+            merchant:
+              $ref: '#/components/schemas/Merchant'
+            metadata:
+              type: object
+              description: Additional transaction metadata
+              additionalProperties: true
+
+    Merchant:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Merchant name
+        category:
+          type: string
+          description: Merchant category
+        location:
+          type: string
+          description: Merchant location
+
+    PaymentRequest:
+      type: object
+      required:
+        - fromAccountId
+        - toBeneficiaryId
+        - amount
+        - currency
+        - paymentType
+      properties:
+        fromAccountId:
+          type: string
+          description: Source account identifier
+        toBeneficiaryId:
+          type: string
+          description: Beneficiary identifier
+        amount:
+          type: number
+          format: double
+          minimum: 0.01
+          description: Payment amount
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: ISO 4217 currency code
+        paymentType:
+          type: string
+          enum: [DOMESTIC, INTERNATIONAL, WIRE]
+          description: Type of payment
+        reference:
+          type: string
+          maxLength: 140
+          description: Payment reference or description
+        scheduledDate:
+          type: string
+          format: date
+          description: Scheduled payment date (defaults to today)
+        urgency:
+          type: string
+          enum: [STANDARD, URGENT, EXPRESS]
+          default: STANDARD
+          description: Payment urgency level
+
+    PaymentResponse:
+      type: object
+      required:
+        - paymentId
+        - status
+        - fromAccountId
+        - toBeneficiaryId
+        - amount
+        - currency
+        - paymentType
+        - createdAt
+      properties:
+        paymentId:
+          type: string
+          description: Unique payment identifier
+        status:
+          type: string
+          enum: [PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED]
+          description: Payment status
+        fromAccountId:
+          type: string
+          description: Source account identifier
+        toBeneficiaryId:
+          type: string
+          description: Beneficiary identifier
+        amount:
+          type: number
+          format: double
+          description: Payment amount
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: ISO 4217 currency code
+        paymentType:
+          type: string
+          enum: [DOMESTIC, INTERNATIONAL, WIRE]
+          description: Type of payment
+        reference:
+          type: string
+          description: Payment reference
+        scheduledDate:
+          type: string
+          format: date
+          description: Scheduled payment date
+        createdAt:
+          type: string
+          format: date-time
+          description: Payment creation timestamp
+        completedAt:
+          type: string
+          format: date-time
+          description: Payment completion timestamp
+        cancelledAt:
+          type: string
+          format: date-time
+          description: Payment cancellation timestamp
+        estimatedCompletionDate:
+          type: string
+          format: date-time
+          description: Estimated completion date
+        transactionId:
+          type: string
+          description: Associated transaction ID (when completed)
+        cancellationReason:
+          type: string
+          description: Reason for cancellation
+
+    BeneficiaryListResponse:
+      type: object
+      required:
+        - beneficiaries
+        - pagination
+      properties:
+        beneficiaries:
+          type: array
+          items:
+            $ref: '#/components/schemas/BeneficiarySummary'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    BeneficiarySummary:
+      type: object
+      required:
+        - beneficiaryId
+        - beneficiaryType
+        - name
+        - accountNumber
+        - bankName
+        - status
+      properties:
+        beneficiaryId:
+          type: string
+          description: Unique beneficiary identifier
+        beneficiaryType:
+          type: string
+          enum: [INDIVIDUAL, BUSINESS]
+          description: Type of beneficiary
+        name:
+          type: string
+          description: Beneficiary name
+        nickname:
+          type: string
+          description: User-defined nickname
+        accountNumber:
+          type: string
+          description: Masked account number
+        bankName:
+          type: string
+          description: Bank name
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, PENDING_VERIFICATION]
+          description: Beneficiary status
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp
+
+    BeneficiaryRequest:
+      type: object
+      required:
+        - beneficiaryType
+        - name
+        - accountNumber
+        - routingNumber
+        - bankName
+      properties:
+        beneficiaryType:
+          type: string
+          enum: [INDIVIDUAL, BUSINESS]
+          description: Type of beneficiary
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+          description: Beneficiary full name
+        nickname:
+          type: string
+          maxLength: 50
+          description: User-defined nickname
+        accountNumber:
+          type: string
+          pattern: '^[0-9]{10,18}$'
+          description: Beneficiary account number
+        routingNumber:
+          type: string
+          pattern: '^[0-9]{9}$'
+          description: Bank routing number
+        bankName:
+          type: string
+          description: Bank name
+        bankAddress:
+          $ref: '#/components/schemas/Address'
+        email:
+          type: string
+          format: email
+          description: Beneficiary email address
+        phone:
+          type: string
+          pattern: '^\+[1-9]\d{1,14}$'
+          description: Phone number in E.164 format
+
+    BeneficiaryDetails:
+      allOf:
+        - $ref: '#/components/schemas/BeneficiarySummary'
+        - type: object
+          properties:
+            routingNumber:
+              type: string
+              description: Bank routing number
+            bankAddress:
+              $ref: '#/components/schemas/Address'
+            email:
+              type: string
+              format: email
+              description: Email address
+            phone:
+              type: string
+              description: Phone number
+            lastUsed:
+              type: string
+              format: date-time
+              description: Last payment date
+
+    BeneficiaryUpdateRequest:
+      type: object
+      properties:
+        nickname:
+          type: string
+          maxLength: 50
+          description: User-defined nickname
+        email:
+          type: string
+          format: email
+          description: Email address
+        phone:
+          type: string
+          pattern: '^\+[1-9]\d{1,14}$'
+          description: Phone number in E.164 format
+
+    Address:
+      type: object
+      required:
+        - street
+        - city
+        - postalCode
+        - country
+      properties:
+        street:
+          type: string
+          description: Street address
+        city:
+          type: string
+          description: City
+        state:
+          type: string
+          description: State or province
+        postalCode:
+          type: string
+          description: Postal or ZIP code
+        country:
+          type: string
+          pattern: '^[A-Z]{2}$'
+          description: ISO 3166-1 alpha-2 country code
+
+    StatementListResponse:
+      type: object
+      required:
+        - statements
+      properties:
+        statements:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatementSummary'
+
+    StatementSummary:
+      type: object
+      required:
+        - statementId
+        - accountId
+        - period
+        - generatedDate
+        - format
+        - status
+      properties:
+        statementId:
+          type: string
+          description: Unique statement identifier
+        accountId:
+          type: string
+          description: Associated account identifier
+        period:
+          $ref: '#/components/schemas/Period'
+        generatedDate:
+          type: string
+          format: date-time
+          description: Statement generation date
+        format:
+          type: string
+          enum: [PDF, CSV]
+          description: Statement format
+        size:
+          type: integer
+          description: File size in bytes
+        status:
+          type: string
+          enum: [AVAILABLE, GENERATING, ARCHIVED]
+          description: Statement status
+
+    Period:
+      type: object
+      required:
+        - startDate
+        - endDate
+      properties:
+        startDate:
+          type: string
+          format: date
+          description: Period start date
+        endDate:
+          type: string
+          format: date
+          description: Period end date
+
+    Pagination:
+      type: object
+      required:
+        - page
+        - limit
+        - totalPages
+        - totalRecords
+      properties:
+        page:
+          type: integer
+          description: Current page number
+        limit:
+          type: integer
+          description: Items per page
+        totalPages:
+          type: integer
+          description: Total number of pages
+        totalRecords:
+          type: integer
+          description: Total number of records
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+            - timestamp
+          properties:
+            code:
+              type: string
+              description: Error code
+            message:
+              type: string
+              description: Human-readable error message
+            details:
+              type: array
+              description: Additional error details
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  message:
+                    type: string
+            timestamp:
+              type: string
+              format: date-time
+              description: Error timestamp
+            correlationId:
+              type: string
+              description: Request correlation ID for tracking
+
+  responses:
+    BadRequestError:
+      description: Bad request - Invalid input parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: BAD_REQUEST
+              message: Invalid request parameters
+              details:
+                - field: amount
+                  message: Amount must be greater than 0
+              timestamp: '2026-01-09T16:45:00Z'
+              correlationId: corr-123456
+
+    UnauthorizedError:
+      description: Unauthorized - Invalid or missing authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or expired access token
+              timestamp: '2026-01-09T16:45:00Z'
+              correlationId: corr-123456
+
+    ForbiddenError:
+      description: Forbidden - Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: FORBIDDEN
+              message: Insufficient permissions to access this resource
+              timestamp: '2026-01-09T16:45:00Z'
+              correlationId: corr-123456
+
+    NotFoundError:
+      description: Not found - Resource does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: NOT_FOUND
+              message: The requested resource was not found
+              timestamp: '2026-01-09T16:45:00Z'
+              correlationId: corr-123456
+
+    UnprocessableEntityError:
+      description: Unprocessable entity - Business logic validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: UNPROCESSABLE_ENTITY
+              message: Payment cannot be processed
+              details:
+                - field: amount
+                  message: Insufficient funds in account
+              timestamp: '2026-01-09T16:45:00Z'
+              correlationId: corr-123456
+
+    RateLimitError:
+      description: Too many requests - Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          description: Request limit per time window
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          description: Remaining requests in current window
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          description: Time when the rate limit resets (Unix timestamp)
+          schema:
+            type: integer
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: RATE_LIMIT_EXCEEDED
+              message: Rate limit exceeded. Please try again later.
+              timestamp: '2026-01-09T16:45:00Z'
+              correlationId: corr-123456
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: INTERNAL_SERVER_ERROR
+              message: An unexpected error occurred. Please try again later.
+              timestamp: '2026-01-09T16:45:00Z'
+              correlationId: corr-123456
+
+# Made with Bob
