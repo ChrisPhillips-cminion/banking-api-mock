@@ -12,6 +12,20 @@ router.get('/:statementId/download', (req, res, next) => {
   
   // Validate statement ID format
   if (!statementId.startsWith('stmt-')) {
+    return next(createError(400, 'INVALID_STATEMENT_ID', 'Invalid statement ID format'));
+  }
+  
+  // List of valid statement IDs (mock data)
+  const validStatementIds = [
+    'stmt-202401-001',
+    'stmt-202401-002',
+    'stmt-202312-001',
+    'stmt-202312-002',
+    'stmt-202311-001'
+  ];
+  
+  // Check if statement exists
+  if (!validStatementIds.includes(statementId)) {
     return next(createError(404, 'STATEMENT_NOT_FOUND', `Statement ${statementId} not found`));
   }
   

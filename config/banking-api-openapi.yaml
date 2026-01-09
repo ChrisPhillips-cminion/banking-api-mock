@@ -1,31 +1,51 @@
 openapi: 3.0.3
 info:
   title: Banking Services API
+  x-ibm-name: banking-services-api
   version: 1.0.0
-  description: |
+  description: >
     # Banking Services API
-    
-    A comprehensive RESTful API for banking operations including account management, 
+
+
+    A comprehensive RESTful API for banking operations including account
+    management, 
+
     transactions, payments, and beneficiary management.
-    
+
+
     ## Features
+
     - Account management and balance inquiries
+
     - Transaction history and search
+
     - Domestic and international payments
+
     - Beneficiary management
+
     - Account statements generation
-    
+
+
     ## Security
+
     This API uses OAuth 2.0 for authentication and authorization. All endpoints 
+
     require a valid access token except for the health check endpoint.
-    
+
+
     ## Rate Limiting
+
     Rate limits are enforced based on your subscription tier:
+
     - Bronze: 10 requests per minute
+
     - Silver: 100 requests per minute
+
     - Gold: 1000 requests per minute
-    
+
+
     ## Support
+
     For API support, contact: api-support@bankingservices.com
   contact:
     name: API Support Team
@@ -35,14 +55,11 @@ info:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
   termsOfService: https://www.bankingservices.com/terms
-
 servers:
   - url: https://api.bankingservices.com/v1
     description: Production server
   - url: https://sandbox-api.bankingservices.com/v1
     description: Sandbox server for testing
-
-# API Connect v10 Configuration
 x-ibm-configuration:
   enforced: true
   testable: true
@@ -51,81 +68,92 @@ x-ibm-configuration:
     enabled: true
   assembly:
     execute:
-      - rate-limit:
-          version: 2.0.0
-          title: rate-limit
-          rate-limit:
-            - condition: "($operationID() = 'getAccounts')"
-              value: 100/1minute
-            - condition: "($operationID() = 'createPayment')"
-              value: 10/1minute
-            - default: 50/1minute
       - gatewayscript:
           version: 2.0.0
           title: request-transform
-          source: |
+          source: >
             // Add correlation ID if not present
+
             if (!context.get('message.headers.x-correlation-id')) {
               context.set('message.headers.x-correlation-id', context.get('request.id'));
             }
+
             // Add timestamp
-            context.set('message.headers.x-request-timestamp', new Date().toISOString());
+
+            context.set('message.headers.x-request-timestamp', new
+            Date().toISOString());
+
+
+            context.set('message.headers.x-api-key',context.get('message.headers.x-ibm-client-id'))
       - invoke:
           version: 2.0.0
           title: invoke-backend
-          target-url: $(backend-url)$(request.path)
+          backend-type: detect
+          header-control:
+            type: blocklist
+            values: []
+          parameter-control:
+            type: allowlist
+            values: []
           timeout: 60
           verb: keep
+          chunked-uploads: true
+          persistent-connection: true
+          target-url: $(backend-url)$(api.operation.path)
           cache-response: protocol
           cache-ttl: 900
           stop-on-error:
             - ConnectionError
-            - OperationError
       - gatewayscript:
           version: 2.0.0
           title: response-transform
-          source: |
+          source: >
             // Add response headers
-            context.set('message.headers.x-response-timestamp', new Date().toISOString());
+
+            context.set('message.headers.x-response-timestamp', new
+            Date().toISOString());
+
             context.set('message.headers.x-api-version', '1.0.0');
     catch:
       - errors:
           - ConnectionError
-          - OperationError
         execute:
           - gatewayscript:
               version: 2.0.0
               title: error-handler
               source: |
+                // Only handle connection errors, pass through all other errors from backend
                 var errorResponse = {
                   error: {
                     code: 'GATEWAY_ERROR',
-                    message: 'An error occurred while processing your request',
+                    message: 'Unable to connect to backend service',
                     timestamp: new Date().toISOString(),
                     correlationId: context.get('message.headers.x-correlation-id')
                   }
                 };
-                context.message.statusCode = '500';
+                context.message.statusCode = '503';
                 context.message.body.write(JSON.stringify(errorResponse));
   gateway: datapower-api-gateway
   properties:
     backend-url:
-      value: https://backend.bankingservices.com
+      value: >-
+        https://banking-api-mock-banking-api-mock.apps.bubble.hur.hdclab.intranet.ibm.com/
       description: Backend service URL
       encoded: false
   catalogs:
     sandbox:
       properties:
-        backend-url: https://sandbox-backend.bankingservices.com
+        backend-url: >-
+          https://banking-api-mock-banking-api-mock.apps.bubble.hur.hdclab.intranet.ibm.com/
     production:
       properties:
-        backend-url: https://backend.bankingservices.com
-
-security:
-  - oauth2ClientCredentials: []
-  - oauth2AuthCode: []
-  - apiKey: []
-
+        backend-url: >-
+          https://banking-api-mock-banking-api-mock.apps.bubble.hur.hdclab.intranet.ibm.com/
+  type: rest
+  activity-log:
+    enabled: true
+    success-content: activity
+    error-content: payload
 tags:
   - name: Accounts
     description: Account management operations
@@ -139,7 +167,6 @@ tags:
     description: Account statement operations
   - name: Health
     description: API health and status
-
 paths:
   /health:
     get:
@@ -171,8 +198,7 @@ paths:
               example:
                 status: UP
                 timestamp: '2026-01-09T16:45:00Z'
-                version: '1.0.0'
-
+                version: 1.0.0
   /accounts:
     get:
       tags:
@@ -188,13 +214,21 @@ paths:
           description: Filter by account type
           schema:
             type: string
-            enum: [CHECKING, SAVINGS, CREDIT, INVESTMENT]
+            enum:
+              - CHECKING
+              - SAVINGS
+              - CREDIT
+              - INVESTMENT
         - name: status
           in: query
           description: Filter by account status
           schema:
             type: string
-            enum: [ACTIVE, INACTIVE, CLOSED, SUSPENDED]
+            enum:
+              - ACTIVE
+              - INACTIVE
+              - CLOSED
+              - SUSPENDED
       responses:
         '200':
           description: Successful response
@@ -231,7 +265,6 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
   /accounts/{accountId}:
     get:
       tags:
@@ -261,9 +294,9 @@ paths:
                   branchId: BR-001
                   branchName: Downtown Branch
                   branchCode: DTN001
-                availableBalance: 5432.10
-                currentBalance: 5432.10
-                overdraftLimit: 1000.00
+                availableBalance: 5432.1
+                currentBalance: 5432.1
+                overdraftLimit: 1000
                 interestRate: 0.01
                 lastTransactionDate: '2026-01-09T10:30:00Z'
         '401':
@@ -276,7 +309,6 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
   /accounts/{accountId}/balance:
     get:
       tags:
@@ -296,10 +328,10 @@ paths:
               example:
                 accountId: ACC-123456789
                 currency: USD
-                availableBalance: 5432.10
-                currentBalance: 5432.10
-                pendingBalance: 0.00
-                overdraftLimit: 1000.00
+                availableBalance: 5432.1
+                currentBalance: 5432.1
+                pendingBalance: 0
+                overdraftLimit: 1000
                 lastUpdated: '2026-01-09T16:45:00Z'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
@@ -311,7 +343,6 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
   /transactions:
     get:
       tags:
@@ -353,13 +384,23 @@ paths:
           description: Filter by transaction type
           schema:
             type: string
-            enum: [DEBIT, CREDIT, TRANSFER, PAYMENT, FEE, INTEREST]
+            enum:
+              - DEBIT
+              - CREDIT
+              - TRANSFER
+              - PAYMENT
+              - FEE
+              - INTEREST
         - name: status
           in: query
           description: Filter by transaction status
           schema:
             type: string
-            enum: [COMPLETED, PENDING, FAILED, CANCELLED]
+            enum:
+              - COMPLETED
+              - PENDING
+              - FAILED
+              - CANCELLED
       responses:
         '200':
           description: Successful response
@@ -372,21 +413,21 @@ paths:
                   - transactionId: TXN-20260109-001
                     accountId: ACC-123456789
                     transactionType: DEBIT
-                    amount: 125.50
+                    amount: 125.5
                     currency: USD
                     description: Coffee Shop Purchase
                     transactionDate: '2026-01-09T10:30:00Z'
                     status: COMPLETED
-                    balance: 5432.10
+                    balance: 5432.1
                   - transactionId: TXN-20260108-045
                     accountId: ACC-123456789
                     transactionType: CREDIT
-                    amount: 2500.00
+                    amount: 2500
                     currency: USD
                     description: Salary Deposit
                     transactionDate: '2026-01-08T09:00:00Z'
                     status: COMPLETED
-                    balance: 5557.60
+                    balance: 5557.6
                 pagination:
                   page: 1
                   limit: 10
@@ -400,7 +441,6 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
   /transactions/{transactionId}:
     get:
       tags:
@@ -421,13 +461,13 @@ paths:
                 transactionId: TXN-20260109-001
                 accountId: ACC-123456789
                 transactionType: DEBIT
-                amount: 125.50
+                amount: 125.5
                 currency: USD
                 description: Coffee Shop Purchase
                 transactionDate: '2026-01-09T10:30:00Z'
                 valueDate: '2026-01-09'
                 status: COMPLETED
-                balance: 5432.10
+                balance: 5432.1
                 merchant:
                   name: Downtown Coffee Shop
                   category: FOOD_AND_DINING
@@ -446,7 +486,6 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
   /accounts/{accountId}/transactions:
     get:
       tags:
@@ -489,7 +528,6 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
   /payments:
     post:
       tags:
@@ -506,10 +544,10 @@ paths:
             example:
               fromAccountId: ACC-123456789
               toBeneficiaryId: BEN-987654321
-              amount: 500.00
+              amount: 500
               currency: USD
               paymentType: DOMESTIC
-              reference: Invoice #12345
+              reference: Invoice
               scheduledDate: '2026-01-10'
               urgency: STANDARD
       responses:
@@ -524,10 +562,10 @@ paths:
                 status: PENDING
                 fromAccountId: ACC-123456789
                 toBeneficiaryId: BEN-987654321
-                amount: 500.00
+                amount: 500
                 currency: USD
                 paymentType: DOMESTIC
-                reference: Invoice #12345
+                reference: Invoice
                 scheduledDate: '2026-01-10'
                 createdAt: '2026-01-09T16:45:00Z'
                 estimatedCompletionDate: '2026-01-10T12:00:00Z'
@@ -543,7 +581,6 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
   /payments/{paymentId}:
     get:
       tags:
@@ -565,10 +602,10 @@ paths:
                 status: COMPLETED
                 fromAccountId: ACC-123456789
                 toBeneficiaryId: BEN-987654321
-                amount: 500.00
+                amount: 500
                 currency: USD
                 paymentType: DOMESTIC
-                reference: Invoice #12345
+                reference: Invoice
                 scheduledDate: '2026-01-10'
                 createdAt: '2026-01-09T16:45:00Z'
                 completedAt: '2026-01-10T09:30:00Z'
@@ -583,7 +620,6 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
   /payments/{paymentId}/cancel:
     put:
       tags:
@@ -621,10 +657,10 @@ paths:
                 status: CANCELLED
                 fromAccountId: ACC-123456789
                 toBeneficiaryId: BEN-987654321
-                amount: 500.00
+                amount: 500
                 currency: USD
                 paymentType: DOMESTIC
-                reference: Invoice #12345
+                reference: Invoice
                 scheduledDate: '2026-01-10'
                 createdAt: '2026-01-09T16:45:00Z'
                 cancelledAt: '2026-01-09T17:00:00Z'
@@ -643,7 +679,6 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
   /beneficiaries:
     get:
       tags:
@@ -659,7 +694,9 @@ paths:
           description: Filter by beneficiary type
           schema:
             type: string
-            enum: [INDIVIDUAL, BUSINESS]
+            enum:
+              - INDIVIDUAL
+              - BUSINESS
       responses:
         '200':
           description: Successful response
@@ -696,7 +733,6 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
     post:
       tags:
         - Beneficiaries
@@ -723,7 +759,7 @@ paths:
                 postalCode: '02101'
                 country: US
               email: jane.doe@example.com
-              phone: '+1-555-0123'
+              phone: +1-555-0123
       responses:
         '201':
           description: Beneficiary created successfully
@@ -746,7 +782,7 @@ paths:
                   postalCode: '02101'
                   country: US
                 email: jane.doe@example.com
-                phone: '+1-555-0123'
+                phone: +1-555-0123
                 status: PENDING_VERIFICATION
                 createdAt: '2026-01-09T16:45:00Z'
         '400':
@@ -759,7 +795,6 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
   /beneficiaries/{beneficiaryId}:
     get:
       tags:
@@ -791,7 +826,7 @@ paths:
                   postalCode: '10001'
                   country: US
                 email: john.smith@example.com
-                phone: '+1-555-0124'
+                phone: +1-555-0124
                 status: ACTIVE
                 createdAt: '2025-06-15T10:00:00Z'
                 lastUsed: '2026-01-05T14:20:00Z'
@@ -805,7 +840,6 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
     put:
       tags:
         - Beneficiaries
@@ -823,7 +857,7 @@ paths:
             example:
               nickname: John - Monthly Rent
               email: john.smith.new@example.com
-              phone: '+1-555-9999'
+              phone: +1-555-9999
       responses:
         '200':
           description: Beneficiary updated successfully
@@ -845,7 +879,6 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
     delete:
       tags:
         - Beneficiaries
@@ -879,7 +912,6 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
   /accounts/{accountId}/statements:
     get:
       tags:
@@ -940,7 +972,6 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
   /statements/{statementId}/download:
     get:
       tags:
@@ -955,7 +986,9 @@ paths:
           description: Desired format for the statement
           schema:
             type: string
-            enum: [PDF, CSV]
+            enum:
+              - PDF
+              - CSV
             default: PDF
       responses:
         '200':
@@ -979,54 +1012,13 @@ paths:
           $ref: '#/components/responses/RateLimitError'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
 components:
   securitySchemes:
-    oauth2ClientCredentials:
-      type: oauth2
-      description: OAuth 2.0 Client Credentials flow for server-to-server authentication
-      flows:
-        clientCredentials:
-          tokenUrl: https://auth.bankingservices.com/oauth2/token
-          scopes:
-            accounts:read: Read account information
-            accounts:write: Modify account information
-            transactions:read: Read transaction history
-            payments:read: Read payment information
-            payments:write: Create and manage payments
-            beneficiaries:read: Read beneficiary information
-            beneficiaries:write: Manage beneficiaries
-            statements:read: Access account statements
-      x-ibm-configuration:
-        provider: oauth-provider
-        
-    oauth2AuthCode:
-      type: oauth2
-      description: OAuth 2.0 Authorization Code flow for user authentication
-      flows:
-        authorizationCode:
-          authorizationUrl: https://auth.bankingservices.com/oauth2/authorize
-          tokenUrl: https://auth.bankingservices.com/oauth2/token
-          scopes:
-            accounts:read: Read account information
-            accounts:write: Modify account information
-            transactions:read: Read transaction history
-            payments:read: Read payment information
-            payments:write: Create and manage payments
-            beneficiaries:read: Read beneficiary information
-            beneficiaries:write: Manage beneficiaries
-            statements:read: Access account statements
-      x-ibm-configuration:
-        provider: oauth-provider
-        
-    apiKey:
+    client:
       type: apiKey
-      description: API key for application identification
-      name: X-API-Key
+      x-key-type: client_id
+      name: X-IBM-Client-Id
       in: header
-      x-ibm-configuration:
-        key-type: client_id
-
   parameters:
     AccountIdParam:
       name: accountId
@@ -1035,9 +1027,8 @@ components:
       description: Unique identifier for the account
       schema:
         type: string
-        pattern: '^ACC-[0-9]{9}$'
+        pattern: ^ACC-[0-9]{9}$
       example: ACC-123456789
-
     TransactionIdParam:
       name: transactionId
       in: path
@@ -1045,9 +1036,8 @@ components:
       description: Unique identifier for the transaction
       schema:
         type: string
-        pattern: '^TXN-[0-9]{8}-[0-9]{3}$'
+        pattern: ^TXN-[0-9]{8}-[0-9]{3}$
       example: TXN-20260109-001
-
     PaymentIdParam:
       name: paymentId
       in: path
@@ -1055,9 +1045,8 @@ components:
       description: Unique identifier for the payment
       schema:
         type: string
-        pattern: '^PAY-[0-9]{8}-[0-9]{3}$'
+        pattern: ^PAY-[0-9]{8}-[0-9]{3}$
       example: PAY-20260109-001
-
     BeneficiaryIdParam:
       name: beneficiaryId
       in: path
@@ -1065,9 +1054,8 @@ components:
       description: Unique identifier for the beneficiary
       schema:
         type: string
-        pattern: '^BEN-[0-9]{9}$'
+        pattern: ^BEN-[0-9]{9}$
       example: BEN-987654321
-
     StatementIdParam:
       name: statementId
       in: path
@@ -1075,9 +1063,8 @@ components:
       description: Unique identifier for the statement
       schema:
         type: string
-        pattern: '^STMT-[0-9]{6}-[0-9]{3}$'
+        pattern: ^STMT-[0-9]{6}-[0-9]{3}$
       example: STMT-202601-001
-
     PageParam:
       name: page
       in: query
@@ -1087,7 +1074,6 @@ components:
         minimum: 1
         default: 1
       example: 1
-
     LimitParam:
       name: limit
       in: query
@@ -1098,7 +1084,6 @@ components:
         maximum: 100
         default: 10
       example: 10
-
   schemas:
     HealthResponse:
       type: object
@@ -1109,7 +1094,10 @@ components:
       properties:
         status:
           type: string
-          enum: [UP, DOWN, DEGRADED]
+          enum:
+            - UP
+            - DOWN
+            - DEGRADED
           description: Current API status
         timestamp:
           type: string
@@ -1118,7 +1106,6 @@ components:
         version:
           type: string
           description: API version
-
     AccountListResponse:
       type: object
       required:
@@ -1131,7 +1118,6 @@ components:
             $ref: '#/components/schemas/AccountSummary'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     AccountSummary:
       type: object
       required:
@@ -1151,16 +1137,24 @@ components:
           example: '****1234'
         accountType:
           type: string
-          enum: [CHECKING, SAVINGS, CREDIT, INVESTMENT]
+          enum:
+            - CHECKING
+            - SAVINGS
+            - CREDIT
+            - INVESTMENT
           description: Type of account
         currency:
           type: string
-          pattern: '^[A-Z]{3}$'
+          pattern: ^[A-Z]{3}$
           description: ISO 4217 currency code
           example: USD
         status:
           type: string
-          enum: [ACTIVE, INACTIVE, CLOSED, SUSPENDED]
+          enum:
+            - ACTIVE
+            - INACTIVE
+            - CLOSED
+            - SUSPENDED
           description: Current account status
         nickname:
           type: string
@@ -1170,7 +1164,6 @@ components:
           type: string
           format: date
           description: Date when account was opened
-
     AccountDetails:
       allOf:
         - $ref: '#/components/schemas/AccountSummary'
@@ -1190,17 +1183,17 @@ components:
               type: number
               format: double
               description: Available balance for transactions
-              example: 5432.10
+              example: 5432.1
             currentBalance:
               type: number
               format: double
               description: Current account balance
-              example: 5432.10
+              example: 5432.1
             overdraftLimit:
               type: number
               format: double
               description: Overdraft limit (if applicable)
-              example: 1000.00
+              example: 1000
             interestRate:
               type: number
               format: double
@@ -1210,7 +1203,6 @@ components:
               type: string
               format: date-time
               description: Date and time of last transaction
-
     Branch:
       type: object
       required:
@@ -1227,7 +1219,6 @@ components:
         branchCode:
           type: string
           description: Branch code
-
     BalanceResponse:
       type: object
       required:
@@ -1242,7 +1233,7 @@ components:
           description: Account identifier
         currency:
           type: string
-          pattern: '^[A-Z]{3}$'
+          pattern: ^[A-Z]{3}$
           description: ISO 4217 currency code
         availableBalance:
           type: number
@@ -1264,7 +1255,6 @@ components:
           type: string
           format: date-time
           description: Last balance update timestamp
-
     TransactionListResponse:
       type: object
       required:
@@ -1277,7 +1267,6 @@ components:
             $ref: '#/components/schemas/TransactionSummary'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     TransactionSummary:
       type: object
       required:
@@ -1297,7 +1286,13 @@ components:
           description: Associated account identifier
         transactionType:
           type: string
-          enum: [DEBIT, CREDIT, TRANSFER, PAYMENT, FEE, INTEREST]
+          enum:
+            - DEBIT
+            - CREDIT
+            - TRANSFER
+            - PAYMENT
+            - FEE
+            - INTEREST
           description: Type of transaction
         amount:
           type: number
@@ -1305,7 +1300,7 @@ components:
           description: Transaction amount
         currency:
           type: string
-          pattern: '^[A-Z]{3}$'
+          pattern: ^[A-Z]{3}$
           description: ISO 4217 currency code
         description:
           type: string
@@ -1316,13 +1311,16 @@ components:
           description: Transaction date and time
         status:
           type: string
-          enum: [COMPLETED, PENDING, FAILED, CANCELLED]
+          enum:
+            - COMPLETED
+            - PENDING
+            - FAILED
+            - CANCELLED
           description: Transaction status
         balance:
           type: number
           format: double
           description: Account balance after transaction
-
     TransactionDetails:
       allOf:
         - $ref: '#/components/schemas/TransactionSummary'
@@ -1338,7 +1336,6 @@ components:
               type: object
               description: Additional transaction metadata
               additionalProperties: true
-
     Merchant:
       type: object
       properties:
@@ -1351,7 +1348,6 @@ components:
         location:
           type: string
           description: Merchant location
-
     PaymentRequest:
       type: object
       required:
@@ -1374,11 +1370,14 @@ components:
           description: Payment amount
         currency:
           type: string
-          pattern: '^[A-Z]{3}$'
+          pattern: ^[A-Z]{3}$
           description: ISO 4217 currency code
         paymentType:
           type: string
-          enum: [DOMESTIC, INTERNATIONAL, WIRE]
+          enum:
+            - DOMESTIC
+            - INTERNATIONAL
+            - WIRE
           description: Type of payment
         reference:
           type: string
@@ -1390,10 +1389,12 @@ components:
           description: Scheduled payment date (defaults to today)
         urgency:
           type: string
-          enum: [STANDARD, URGENT, EXPRESS]
+          enum:
+            - STANDARD
+            - URGENT
+            - EXPRESS
           default: STANDARD
           description: Payment urgency level
-
     PaymentResponse:
       type: object
       required:
@@ -1411,7 +1412,12 @@ components:
           description: Unique payment identifier
         status:
           type: string
-          enum: [PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED]
+          enum:
+            - PENDING
+            - PROCESSING
+            - COMPLETED
+            - FAILED
+            - CANCELLED
           description: Payment status
         fromAccountId:
           type: string
@@ -1425,11 +1431,14 @@ components:
           description: Payment amount
         currency:
           type: string
-          pattern: '^[A-Z]{3}$'
+          pattern: ^[A-Z]{3}$
           description: ISO 4217 currency code
         paymentType:
           type: string
-          enum: [DOMESTIC, INTERNATIONAL, WIRE]
+          enum:
+            - DOMESTIC
+            - INTERNATIONAL
+            - WIRE
           description: Type of payment
         reference:
           type: string
@@ -1460,7 +1469,6 @@ components:
         cancellationReason:
           type: string
           description: Reason for cancellation
-
     BeneficiaryListResponse:
       type: object
       required:
@@ -1473,7 +1481,6 @@ components:
             $ref: '#/components/schemas/BeneficiarySummary'
         pagination:
           $ref: '#/components/schemas/Pagination'
-
     BeneficiarySummary:
       type: object
       required:
@@ -1489,7 +1496,9 @@ components:
           description: Unique beneficiary identifier
         beneficiaryType:
           type: string
-          enum: [INDIVIDUAL, BUSINESS]
+          enum:
+            - INDIVIDUAL
+            - BUSINESS
           description: Type of beneficiary
         name:
           type: string
@@ -1505,13 +1514,15 @@ components:
           description: Bank name
         status:
           type: string
-          enum: [ACTIVE, INACTIVE, PENDING_VERIFICATION]
+          enum:
+            - ACTIVE
+            - INACTIVE
+            - PENDING_VERIFICATION
           description: Beneficiary status
         createdAt:
           type: string
           format: date-time
           description: Creation timestamp
-
     BeneficiaryRequest:
       type: object
       required:
@@ -1523,7 +1534,9 @@ components:
       properties:
         beneficiaryType:
           type: string
-          enum: [INDIVIDUAL, BUSINESS]
+          enum:
+            - INDIVIDUAL
+            - BUSINESS
           description: Type of beneficiary
         name:
           type: string
@@ -1536,11 +1549,11 @@ components:
           description: User-defined nickname
         accountNumber:
           type: string
-          pattern: '^[0-9]{10,18}$'
+          pattern: ^[0-9]{10,18}$
           description: Beneficiary account number
         routingNumber:
           type: string
-          pattern: '^[0-9]{9}$'
+          pattern: ^[0-9]{9}$
           description: Bank routing number
         bankName:
           type: string
@@ -1553,9 +1566,8 @@ components:
           description: Beneficiary email address
         phone:
           type: string
-          pattern: '^\+[1-9]\d{1,14}$'
+          pattern: ^\+[1-9]\d{1,14}$
           description: Phone number in E.164 format
-
     BeneficiaryDetails:
       allOf:
         - $ref: '#/components/schemas/BeneficiarySummary'
@@ -1577,7 +1589,6 @@ components:
               type: string
               format: date-time
               description: Last payment date
-
     BeneficiaryUpdateRequest:
       type: object
       properties:
@@ -1591,9 +1602,8 @@ components:
           description: Email address
         phone:
           type: string
-          pattern: '^\+[1-9]\d{1,14}$'
+          pattern: ^\+[1-9]\d{1,14}$
           description: Phone number in E.164 format
-
     Address:
       type: object
       required:
@@ -1616,9 +1626,8 @@ components:
           description: Postal or ZIP code
         country:
           type: string
-          pattern: '^[A-Z]{2}$'
+          pattern: ^[A-Z]{2}$
           description: ISO 3166-1 alpha-2 country code
-
     StatementListResponse:
       type: object
       required:
@@ -1628,7 +1637,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/StatementSummary'
-
     StatementSummary:
       type: object
       required:
@@ -1653,16 +1661,20 @@ components:
           description: Statement generation date
         format:
           type: string
-          enum: [PDF, CSV]
+          enum:
+            - PDF
+            - CSV
           description: Statement format
         size:
           type: integer
           description: File size in bytes
         status:
           type: string
-          enum: [AVAILABLE, GENERATING, ARCHIVED]
+          enum:
+            - AVAILABLE
+            - GENERATING
+            - ARCHIVED
           description: Statement status
-
     Period:
       type: object
       required:
@@ -1677,7 +1689,6 @@ components:
           type: string
           format: date
           description: Period end date
-
     Pagination:
       type: object
       required:
@@ -1698,7 +1709,6 @@ components:
         totalRecords:
           type: integer
           description: Total number of records
-
     ErrorResponse:
       type: object
       required:
@@ -1734,7 +1744,6 @@ components:
             correlationId:
               type: string
               description: Request correlation ID for tracking
-
   responses:
     BadRequestError:
       description: Bad request - Invalid input parameters
@@ -1751,7 +1760,6 @@ components:
                   message: Amount must be greater than 0
               timestamp: '2026-01-09T16:45:00Z'
               correlationId: corr-123456
-
     UnauthorizedError:
       description: Unauthorized - Invalid or missing authentication
       content:
@@ -1764,7 +1772,6 @@ components:
               message: Invalid or expired access token
               timestamp: '2026-01-09T16:45:00Z'
               correlationId: corr-123456
-
     ForbiddenError:
       description: Forbidden - Insufficient permissions
       content:
@@ -1777,7 +1784,6 @@ components:
               message: Insufficient permissions to access this resource
               timestamp: '2026-01-09T16:45:00Z'
               correlationId: corr-123456
-
     NotFoundError:
       description: Not found - Resource does not exist
       content:
@@ -1790,7 +1796,6 @@ components:
               message: The requested resource was not found
               timestamp: '2026-01-09T16:45:00Z'
               correlationId: corr-123456
-
     UnprocessableEntityError:
       description: Unprocessable entity - Business logic validation failed
       content:
@@ -1806,7 +1811,6 @@ components:
                   message: Insufficient funds in account
               timestamp: '2026-01-09T16:45:00Z'
               correlationId: corr-123456
-
     RateLimitError:
       description: Too many requests - Rate limit exceeded
       headers:
@@ -1836,7 +1840,6 @@ components:
               message: Rate limit exceeded. Please try again later.
               timestamp: '2026-01-09T16:45:00Z'
               correlationId: corr-123456
-
     InternalServerError:
       description: Internal server error
       content:
@@ -1849,5 +1852,5 @@ components:
               message: An unexpected error occurred. Please try again later.
               timestamp: '2026-01-09T16:45:00Z'
               correlationId: corr-123456
-
-# Made with Bob
+security:
+  - client: []

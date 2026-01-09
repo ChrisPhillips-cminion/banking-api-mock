@@ -117,6 +117,7 @@ metadata:
     app.kubernetes.io/name: banking-api-mock
     app.kubernetes.io/component: backend
 spec:
+  host: banking-api-mock-banking-api-mock.apps.bubble.hur.hdclab.intranet.ibm.com
   to:
     kind: Service
     name: banking-api-mock
