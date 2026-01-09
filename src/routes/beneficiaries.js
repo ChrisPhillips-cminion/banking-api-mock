@@ -155,14 +155,8 @@ router.delete('/:beneficiaryId', (req, res, next) => {
     return next(createError(404, 'BENEFICIARY_NOT_FOUND', `Beneficiary ${beneficiaryId} not found`));
   }
   
-  // Check if beneficiary has pending payments (mock check)
-  const hasPendingPayments = Math.random() > 0.8; // 20% chance of having pending payments
-  
-  if (hasPendingPayments) {
-    return next(createError(422, 'BENEFICIARY_HAS_PENDING_PAYMENTS', 
-      'Cannot delete beneficiary with pending payments'));
-  }
-  
+  // For testing purposes, allow deletion of all beneficiaries
+  // In production, this would check for actual pending payments
   delete beneficiaries[beneficiaryId];
   
   res.status(204).send();

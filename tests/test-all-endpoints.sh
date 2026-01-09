@@ -192,7 +192,8 @@ test_endpoint "GET" "/payments/pay-123456789" "200" "Get payment details"
 
 test_endpoint "GET" "/payments/pay-999999999" "404" "Get non-existent payment"
 
-test_endpoint "PUT" "/payments/pay-123456789/cancel" "200" "Cancel a payment"
+cancel_payment_data='{"reason":"Test cancellation"}'
+test_endpoint "PUT" "/payments/pay-123456789/cancel" "200" "Cancel a payment" "$cancel_payment_data"
 
 test_endpoint "PUT" "/payments/pay-999999999/cancel" "404" "Cancel non-existent payment"
 

@@ -7,14 +7,15 @@ const { v4: uuidv4 } = require('uuid');
 const authMiddleware = (req, res, next) => {
   const authHeader = req.headers.authorization;
   const apiKey = req.headers['x-api-key'];
+  const clientId = req.headers['x-ibm-client-id'];
 
-  // For mock purposes, accept any Bearer token or API key
+  // For mock purposes, accept any Bearer token, API key, or IBM Client ID
   // In production, validate against OAuth server or API key database
-  if (!authHeader && !apiKey) {
+  if (!authHeader && !apiKey && !clientId) {
     return res.status(401).json({
       error: {
         code: 'UNAUTHORIZED',
-        message: 'Authentication required. Please provide a valid Bearer token or API key.',
+        message: 'Authentication required. Please provide a valid Bearer token, API key, or Client ID.',
         timestamp: new Date().toISOString(),
         correlationId: req.headers['x-correlation-id'] || uuidv4()
       }
@@ -34,6 +35,18 @@ const authMiddleware = (req, res, next) => {
         }
       });
     }
+  }
+  
+  // Validate API key or Client ID length
+  if ((apiKey && apiKey.length < 10) || (clientId && clientId.length < 10)) {
+    return res.status(401).json({
+      error: {
+        code: 'INVALID_CREDENTIALS',
+        message: 'Invalid API key or Client ID',
+        timestamp: new Date().toISOString(),
+        correlationId: req.headers['x-correlation-id'] || uuidv4()
+      }
+    });
   }
 
   // Add mock user context
