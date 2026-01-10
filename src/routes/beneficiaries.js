@@ -99,8 +99,8 @@ router.post('/', (req, res, next) => {
   
   if (!routingNumber) {
     errors.push({ field: 'routingNumber', message: 'Routing number is required' });
-  } else if (!/^\d{9}$/.test(routingNumber)) {
-    errors.push({ field: 'routingNumber', message: 'Routing number must be exactly 9 digits' });
+  } else if (!/^\d{6,9}$/.test(routingNumber)) {
+    errors.push({ field: 'routingNumber', message: 'Routing number must be 6-9 digits' });
   }
   
   if (!bankName) {

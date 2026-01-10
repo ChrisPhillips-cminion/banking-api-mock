@@ -7,13 +7,23 @@ const { createError } = require('../middleware/errorHandler');
 const transactions = {};
 
 // Initialize with some predefined transactions for testing with specific types
-const predefinedTransactions = [
-  { id: 'txn-20260109-001', accountId: 'acc-123456789', type: 'DEBIT' },
-  { id: 'txn-20260109-002', accountId: 'acc-123456789', type: 'DEBIT' },
-  { id: 'txn-20260109-003', accountId: 'acc-123456789', type: 'DEBIT' },
-  { id: 'txn-20260109-004', accountId: 'acc-987654321', type: 'CREDIT' },
-  { id: 'txn-20260109-005', accountId: 'acc-111222333', type: 'TRANSFER' }
-];
+// Create 20 DEBIT transactions for acc-123456789 to ensure filtering works correctly
+const predefinedTransactions = [];
+for (let i = 1; i <= 20; i++) {
+  predefinedTransactions.push({
+    id: `txn-20260109-${String(i).padStart(3, '0')}`,
+    accountId: 'acc-123456789',
+    type: 'DEBIT'
+  });
+}
+
+// Add some transactions for other accounts with different types
+predefinedTransactions.push(
+  { id: 'txn-20260109-021', accountId: 'acc-987654321', type: 'CREDIT' },
+  { id: 'txn-20260109-022', accountId: 'acc-987654321', type: 'DEBIT' },
+  { id: 'txn-20260109-023', accountId: 'acc-111222333', type: 'TRANSFER' },
+  { id: 'txn-20260109-024', accountId: 'acc-111222333', type: 'CREDIT' }
+);
 
 predefinedTransactions.forEach(({ id, accountId, type }) => {
   const transaction = generateTransaction(accountId, id);
@@ -26,12 +36,6 @@ predefinedTransactions.forEach(({ id, accountId, type }) => {
   }
   transactions[transaction.transactionId] = transaction;
 });
-
-// Initialize with some additional random mock transactions
-for (let i = 0; i < 15; i++) {
-  const transaction = generateTransaction(`acc-${Math.floor(Math.random() * 5)}`);
-  transactions[transaction.transactionId] = transaction;
-}
 
 /**
  * GET /transactions
