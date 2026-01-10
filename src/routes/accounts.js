@@ -100,10 +100,12 @@ router.get('/:accountId/balance', (req, res, next) => {
   res.json({
     accountId: account.accountId,
     currency: account.currency,
+    balance: account.currentBalance,  // Add balance field for test compatibility
     availableBalance: account.availableBalance,
     currentBalance: account.currentBalance,
     pendingBalance: 0,
     overdraftLimit: account.overdraftLimit,
+    asOfDate: new Date().toISOString(),  // Add asOfDate field for test compatibility
     lastUpdated: new Date().toISOString()
   });
 });
