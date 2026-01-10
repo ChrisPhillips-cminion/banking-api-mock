@@ -143,34 +143,64 @@ make_request() {
     local auth_header=${4:-"X-IBM-Client-Id: $CLIENT_ID"}
     
     # Build curl command for debugging
-    LAST_CURL_CMD="curl -k -X $method -H \"$auth_header\" -H \"Content-Type: application/json\""
+    if [ "$auth_header" = "NOAUTH" ]; then
+        LAST_CURL_CMD="curl -k -X $method -H \"Content-Type: application/json\""
+    else
+        LAST_CURL_CMD="curl -k -X $method -H \"$auth_header\" -H \"Content-Type: application/json\""
+    fi
     if [ -n "$data" ]; then
         LAST_CURL_CMD="$LAST_CURL_CMD -d '$data'"
     fi
     LAST_CURL_CMD="$LAST_CURL_CMD \"${BASE_URL}${endpoint}\""
     
     if [ "$method" = "GET" ]; then
-        curl -n -k -s -D "$HEADERS_FILE" -X GET \
-            -H "$auth_header" \
-            -H "Content-Type: application/json" \
-            "${BASE_URL}${endpoint}" > "$RESPONSE_FILE"
+        if [ "$auth_header" = "NOAUTH" ]; then
+            curl -n -k -s -D "$HEADERS_FILE" -X GET \
+                -H "Content-Type: application/json" \
+                "${BASE_URL}${endpoint}" > "$RESPONSE_FILE"
+        else
+            curl -n -k -s -D "$HEADERS_FILE" -X GET \
+                -H "$auth_header" \
+                -H "Content-Type: application/json" \
+                "${BASE_URL}${endpoint}" > "$RESPONSE_FILE"
+        fi
     elif [ "$method" = "POST" ]; then
-        curl -n -k -s -D "$HEADERS_FILE" -X POST \
-            -H "$auth_header" \
-            -H "Content-Type: application/json" \
-            -d "$data" \
-            "${BASE_URL}${endpoint}" > "$RESPONSE_FILE"
+        if [ "$auth_header" = "NOAUTH" ]; then
+            curl -n -k -s -D "$HEADERS_FILE" -X POST \
+                -H "Content-Type: application/json" \
+                -d "$data" \
+                "${BASE_URL}${endpoint}" > "$RESPONSE_FILE"
+        else
+            curl -n -k -s -D "$HEADERS_FILE" -X POST \
+                -H "$auth_header" \
+                -H "Content-Type: application/json" \
+                -d "$data" \
+                "${BASE_URL}${endpoint}" > "$RESPONSE_FILE"
+        fi
     elif [ "$method" = "PUT" ]; then
-        curl -n -k -s -D "$HEADERS_FILE" -X PUT \
-            -H "$auth_header" \
-            -H "Content-Type: application/json" \
-            -d "$data" \
-            "${BASE_URL}${endpoint}" > "$RESPONSE_FILE"
+        if [ "$auth_header" = "NOAUTH" ]; then
+            curl -n -k -s -D "$HEADERS_FILE" -X PUT \
+                -H "Content-Type: application/json" \
+                -d "$data" \
+                "${BASE_URL}${endpoint}" > "$RESPONSE_FILE"
+        else
+            curl -n -k -s -D "$HEADERS_FILE" -X PUT \
+                -H "$auth_header" \
+                -H "Content-Type: application/json" \
+                -d "$data" \
+                "${BASE_URL}${endpoint}" > "$RESPONSE_FILE"
+        fi
     elif [ "$method" = "DELETE" ]; then
-        curl -n -k -s -D "$HEADERS_FILE" -X DELETE \
-            -H "$auth_header" \
-            -H "Content-Type: application/json" \
-            "${BASE_URL}${endpoint}" > "$RESPONSE_FILE"
+        if [ "$auth_header" = "NOAUTH" ]; then
+            curl -n -k -s -D "$HEADERS_FILE" -X DELETE \
+                -H "Content-Type: application/json" \
+                "${BASE_URL}${endpoint}" > "$RESPONSE_FILE"
+        else
+            curl -n -k -s -D "$HEADERS_FILE" -X DELETE \
+                -H "$auth_header" \
+                -H "Content-Type: application/json" \
+                "${BASE_URL}${endpoint}" > "$RESPONSE_FILE"
+        fi
     fi
 }
 
@@ -695,7 +725,7 @@ show_response
 ##############################################################################
 
 print_test "13. Error Response - GET /accounts (No Authentication)"
-make_request "GET" "/accounts" "" ""
+make_request "GET" "/accounts" "" "NOAUTH"
 
 validate_status "401"
 validate_content_type "application/json"

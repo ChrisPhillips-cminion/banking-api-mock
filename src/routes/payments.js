@@ -34,20 +34,64 @@ router.post('/', (req, res, next) => {
     urgency = 'NORMAL'
   } = req.body;
   
-  // Validation
-  if (!fromAccountId || !toBeneficiaryId || !amount || !currency || !paymentType || !reference) {
-    return next(createError(400, 'VALIDATION_ERROR', 'Missing required fields', [
-      { field: 'fromAccountId', message: 'From account ID is required' },
-      { field: 'toBeneficiaryId', message: 'To beneficiary ID is required' },
-      { field: 'amount', message: 'Amount is required' },
-      { field: 'currency', message: 'Currency is required' },
-      { field: 'paymentType', message: 'Payment type is required' },
-      { field: 'reference', message: 'Reference is required' }
-    ]));
+  const errors = [];
+  
+  // Required field validation
+  if (!fromAccountId) {
+    errors.push({ field: 'fromAccountId', message: 'From account ID is required' });
   }
   
-  if (amount <= 0) {
-    return next(createError(422, 'INVALID_AMOUNT', 'Amount must be greater than zero'));
+  if (!toBeneficiaryId) {
+    errors.push({ field: 'toBeneficiaryId', message: 'To beneficiary ID is required' });
+  }
+  
+  if (!amount) {
+    errors.push({ field: 'amount', message: 'Amount is required' });
+  } else if (typeof amount !== 'number' || amount <= 0) {
+    errors.push({ field: 'amount', message: 'Amount must be a positive number' });
+  } else if (amount > 1000000) {
+    errors.push({ field: 'amount', message: 'Amount exceeds maximum limit of 1,000,000' });
+  }
+  
+  if (!currency) {
+    errors.push({ field: 'currency', message: 'Currency is required' });
+  } else if (!/^[A-Z]{3}$/.test(currency)) {
+    errors.push({ field: 'currency', message: 'Currency must be a 3-letter ISO code (e.g., USD, GBP, EUR)' });
+  }
+  
+  if (!paymentType) {
+    errors.push({ field: 'paymentType', message: 'Payment type is required' });
+  } else if (!['DOMESTIC', 'INTERNATIONAL', 'INTERNAL'].includes(paymentType)) {
+    errors.push({ field: 'paymentType', message: 'Payment type must be DOMESTIC, INTERNATIONAL, or INTERNAL' });
+  }
+  
+  if (!reference) {
+    errors.push({ field: 'reference', message: 'Reference is required' });
+  } else if (reference.length < 3 || reference.length > 100) {
+    errors.push({ field: 'reference', message: 'Reference must be between 3 and 100 characters' });
+  }
+  
+  // Optional field validation
+  if (scheduledDate) {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(scheduledDate)) {
+      errors.push({ field: 'scheduledDate', message: 'Scheduled date must be in YYYY-MM-DD format' });
+    } else {
+      const date = new Date(scheduledDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (date < today) {
+        errors.push({ field: 'scheduledDate', message: 'Scheduled date cannot be in the past' });
+      }
+    }
+  }
+  
+  if (urgency && !['NORMAL', 'HIGH', 'URGENT'].includes(urgency)) {
+    errors.push({ field: 'urgency', message: 'Urgency must be NORMAL, HIGH, or URGENT' });
+  }
+  
+  if (errors.length > 0) {
+    return next(createError(400, 'VALIDATION_ERROR', 'Validation failed', errors));
   }
   
   // Create payment

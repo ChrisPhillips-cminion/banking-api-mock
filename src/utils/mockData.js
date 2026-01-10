@@ -34,7 +34,13 @@ const generateAccount = (accountId = null, type = 'CHECKING') => {
  * Generate mock transaction data
  */
 const generateTransaction = (accountId, transactionId = null) => {
-  const id = transactionId || `txn-${uuidv4().substring(0, 13)}`;
+  // Generate ID in format: txn-YYYYMMDD-NNN
+  const id = transactionId || (() => {
+    const date = new Date();
+    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+    const seq = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    return `txn-${dateStr}-${seq}`;
+  })();
   const types = ['DEBIT', 'CREDIT', 'TRANSFER', 'PAYMENT', 'FEE'];
   const type = types[Math.floor(Math.random() * types.length)];
   const amount = parseFloat((Math.random() * 500 + 10).toFixed(2));
@@ -71,10 +77,11 @@ const generateTransaction = (accountId, transactionId = null) => {
 /**
  * Generate mock payment data
  */
-const generatePayment = (fromAccountId, toBeneficiaryId, amount, paymentId = null) => {
-  const id = paymentId || `pmt-${uuidv4().substring(0, 13)}`;
+const generatePayment = (fromAccountId, toBeneficiaryId, amount, paymentId = null, statusOverride = null) => {
+  // Generate ID in format: pay-NNNNNNNNN
+  const id = paymentId || `pay-${Math.floor(100000000 + Math.random() * 900000000)}`;
   const statuses = ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'];
-  const status = statuses[Math.floor(Math.random() * statuses.length)];
+  const status = statusOverride || statuses[Math.floor(Math.random() * statuses.length)];
   
   return {
     paymentId: id,
@@ -99,7 +106,8 @@ const generatePayment = (fromAccountId, toBeneficiaryId, amount, paymentId = nul
  * Generate mock beneficiary data
  */
 const generateBeneficiary = (beneficiaryId = null, beneficiaryType = null) => {
-  const id = beneficiaryId || `ben-${uuidv4().substring(0, 13)}`;
+  // Generate ID in format: ben-NNNNNNNNN
+  const id = beneficiaryId || `ben-${Math.floor(100000000 + Math.random() * 900000000)}`;
   const types = ['INDIVIDUAL', 'BUSINESS'];
   const type = beneficiaryType || types[Math.floor(Math.random() * types.length)];
   

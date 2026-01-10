@@ -76,15 +76,48 @@ router.post('/', (req, res, next) => {
     phone
   } = req.body;
   
-  // Validation
-  if (!beneficiaryType || !name || !accountNumber || !routingNumber || !bankName) {
-    return next(createError(400, 'VALIDATION_ERROR', 'Missing required fields', [
-      { field: 'beneficiaryType', message: 'Beneficiary type is required' },
-      { field: 'name', message: 'Name is required' },
-      { field: 'accountNumber', message: 'Account number is required' },
-      { field: 'routingNumber', message: 'Routing number is required' },
-      { field: 'bankName', message: 'Bank name is required' }
-    ]));
+  const errors = [];
+  
+  // Required field validation
+  if (!beneficiaryType) {
+    errors.push({ field: 'beneficiaryType', message: 'Beneficiary type is required' });
+  } else if (!['INDIVIDUAL', 'BUSINESS'].includes(beneficiaryType)) {
+    errors.push({ field: 'beneficiaryType', message: 'Beneficiary type must be INDIVIDUAL or BUSINESS' });
+  }
+  
+  if (!name) {
+    errors.push({ field: 'name', message: 'Name is required' });
+  } else if (name.length < 2 || name.length > 100) {
+    errors.push({ field: 'name', message: 'Name must be between 2 and 100 characters' });
+  }
+  
+  if (!accountNumber) {
+    errors.push({ field: 'accountNumber', message: 'Account number is required' });
+  } else if (!/^\d{8,17}$/.test(accountNumber)) {
+    errors.push({ field: 'accountNumber', message: 'Account number must be 8-17 digits' });
+  }
+  
+  if (!routingNumber) {
+    errors.push({ field: 'routingNumber', message: 'Routing number is required' });
+  } else if (!/^\d{9}$/.test(routingNumber)) {
+    errors.push({ field: 'routingNumber', message: 'Routing number must be exactly 9 digits' });
+  }
+  
+  if (!bankName) {
+    errors.push({ field: 'bankName', message: 'Bank name is required' });
+  }
+  
+  // Optional field validation
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errors.push({ field: 'email', message: 'Invalid email format' });
+  }
+  
+  if (phone && !/^\+?[\d\s\-()]{10,20}$/.test(phone)) {
+    errors.push({ field: 'phone', message: 'Invalid phone number format' });
+  }
+  
+  if (errors.length > 0) {
+    return next(createError(400, 'VALIDATION_ERROR', 'Validation failed', errors));
   }
   
   // Create beneficiary

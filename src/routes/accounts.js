@@ -25,7 +25,9 @@ predefinedAccounts.forEach(({ id, type }) => {
  * Get list of accounts
  */
 router.get('/', (req, res) => {
-  const { page = 1, limit = 20, accountType } = req.query;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 20;
+  const { accountType } = req.query;
   
   let accountList = Object.values(accounts);
   
@@ -36,7 +38,7 @@ router.get('/', (req, res) => {
   
   // Pagination
   const startIndex = (page - 1) * limit;
-  const endIndex = startIndex + parseInt(limit);
+  const endIndex = startIndex + limit;
   const paginatedAccounts = accountList.slice(startIndex, endIndex);
   
   res.json({
@@ -68,7 +70,7 @@ router.get('/:accountId', (req, res, next) => {
   const account = accounts[accountId];
   
   if (!account) {
-    return next(createError(404, 'ACCOUNT_NOT_FOUND', `Account ${accountId} not found`));
+    return next(createError(404, 'NOT_FOUND', `Account ${accountId} not found`));
   }
   
   // Return account with additional fields for compatibility
@@ -94,7 +96,7 @@ router.get('/:accountId/balance', (req, res, next) => {
   const account = accounts[accountId];
   
   if (!account) {
-    return next(createError(404, 'ACCOUNT_NOT_FOUND', `Account ${accountId} not found`));
+    return next(createError(404, 'NOT_FOUND', `Account ${accountId} not found`));
   }
   
   res.json({

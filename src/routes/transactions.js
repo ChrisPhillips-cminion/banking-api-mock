@@ -6,20 +6,29 @@ const { createError } = require('../middleware/errorHandler');
 // In-memory storage for demo purposes
 const transactions = {};
 
-// Initialize with some predefined transactions for testing
+// Initialize with some predefined transactions for testing with specific types
 const predefinedTransactions = [
-  { id: 'txn-20260109-001', accountId: 'acc-123456789' },
-  { id: 'txn-20260109-002', accountId: 'acc-987654321' },
-  { id: 'txn-20260109-003', accountId: 'acc-111222333' }
+  { id: 'txn-20260109-001', accountId: 'acc-123456789', type: 'DEBIT' },
+  { id: 'txn-20260109-002', accountId: 'acc-123456789', type: 'DEBIT' },
+  { id: 'txn-20260109-003', accountId: 'acc-123456789', type: 'DEBIT' },
+  { id: 'txn-20260109-004', accountId: 'acc-987654321', type: 'CREDIT' },
+  { id: 'txn-20260109-005', accountId: 'acc-111222333', type: 'TRANSFER' }
 ];
 
-predefinedTransactions.forEach(({ id, accountId }) => {
+predefinedTransactions.forEach(({ id, accountId, type }) => {
   const transaction = generateTransaction(accountId, id);
+  transaction.transactionType = type;
+  // Adjust amount sign based on type
+  if (type === 'DEBIT' && transaction.amount > 0) {
+    transaction.amount = -Math.abs(transaction.amount);
+  } else if ((type === 'CREDIT' || type === 'TRANSFER') && transaction.amount < 0) {
+    transaction.amount = Math.abs(transaction.amount);
+  }
   transactions[transaction.transactionId] = transaction;
 });
 
 // Initialize with some additional random mock transactions
-for (let i = 0; i < 17; i++) {
+for (let i = 0; i < 15; i++) {
   const transaction = generateTransaction(`acc-${Math.floor(Math.random() * 5)}`);
   transactions[transaction.transactionId] = transaction;
 }
