@@ -164,7 +164,8 @@ test_endpoint() {
     
     print_test "$description"
     
-    if [ -z "$auth_header" ]; then
+    # Only set default auth header if not explicitly provided (even if empty)
+    if [ $# -lt 6 ]; then
         auth_header="X-IBM-Client-Id: $CLIENT_ID"
     fi
     
@@ -178,27 +179,53 @@ test_endpoint() {
     curl_cmd="$curl_cmd \"${BASE_URL}${endpoint}\""
     
     if [ "$method" = "GET" ]; then
-        response=$(curl -n -k -s -w "\n%{http_code}" -X GET \
-            -H "$auth_header" \
-            -H "Content-Type: application/json" \
-            "${BASE_URL}${endpoint}")
+        if [ -n "$auth_header" ]; then
+            response=$(curl -n -k -s -w "\n%{http_code}" -X GET \
+                -H "$auth_header" \
+                -H "Content-Type: application/json" \
+                "${BASE_URL}${endpoint}")
+        else
+            response=$(curl -n -k -s -w "\n%{http_code}" -X GET \
+                -H "Content-Type: application/json" \
+                "${BASE_URL}${endpoint}")
+        fi
     elif [ "$method" = "POST" ]; then
-        response=$(curl -n -k -s -w "\n%{http_code}" -X POST \
-            -H "$auth_header" \
-            -H "Content-Type: application/json" \
-            -d "$data" \
-            "${BASE_URL}${endpoint}")
+        if [ -n "$auth_header" ]; then
+            response=$(curl -n -k -s -w "\n%{http_code}" -X POST \
+                -H "$auth_header" \
+                -H "Content-Type: application/json" \
+                -d "$data" \
+                "${BASE_URL}${endpoint}")
+        else
+            response=$(curl -n -k -s -w "\n%{http_code}" -X POST \
+                -H "Content-Type: application/json" \
+                -d "$data" \
+                "${BASE_URL}${endpoint}")
+        fi
     elif [ "$method" = "PUT" ]; then
-        response=$(curl -n -k -s -w "\n%{http_code}" -X PUT \
-            -H "$auth_header" \
-            -H "Content-Type: application/json" \
-            -d "$data" \
-            "${BASE_URL}${endpoint}")
+        if [ -n "$auth_header" ]; then
+            response=$(curl -n -k -s -w "\n%{http_code}" -X PUT \
+                -H "$auth_header" \
+                -H "Content-Type: application/json" \
+                -d "$data" \
+                "${BASE_URL}${endpoint}")
+        else
+            response=$(curl -n -k -s -w "\n%{http_code}" -X PUT \
+                -H "Content-Type: application/json" \
+                -d "$data" \
+                "${BASE_URL}${endpoint}")
+        fi
     elif [ "$method" = "DELETE" ]; then
-        response=$(curl -n -k -s -w "\n%{http_code}" -X DELETE \
-            -H "$auth_header" \
-            -H "Content-Type: application/json" \
-            "${BASE_URL}${endpoint}")
+        if [ -n "$auth_header" ]; then
+            response=$(curl -n -k -s -w "\n%{http_code}" -X DELETE \
+                -H "$auth_header" \
+                -H "Content-Type: application/json" \
+                "${BASE_URL}${endpoint}")
+        else
+            response=$(curl -n -k -s -w "\n%{http_code}" -X DELETE \
+                -H "Content-Type: application/json" \
+                "${BASE_URL}${endpoint}")
+        fi
     fi
     
     http_code=$(echo "$response" | tail -n1)

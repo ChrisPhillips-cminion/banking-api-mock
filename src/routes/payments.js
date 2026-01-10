@@ -8,13 +8,13 @@ const payments = {};
 
 // Initialize with some mock payments with predictable IDs
 const predefinedPayments = [
-  { id: 'pay-123456789', fromAccount: 'acc-123456789', toBeneficiary: 'ben-987654321', amount: 250.00 },
-  { id: 'pay-987654321', fromAccount: 'acc-987654321', toBeneficiary: 'ben-111222333', amount: 500.00 },
-  { id: 'pay-111222333', fromAccount: 'acc-111222333', toBeneficiary: 'ben-444555666', amount: 150.00 }
+  { id: 'pay-123456789', fromAccount: 'acc-123456789', toBeneficiary: 'ben-987654321', amount: 250.00, status: 'PENDING' },
+  { id: 'pay-987654321', fromAccount: 'acc-987654321', toBeneficiary: 'ben-111222333', amount: 500.00, status: 'PENDING' },
+  { id: 'pay-111222333', fromAccount: 'acc-111222333', toBeneficiary: 'ben-444555666', amount: 150.00, status: 'COMPLETED' }
 ];
 
-predefinedPayments.forEach(({ id, fromAccount, toBeneficiary, amount }) => {
-  const payment = generatePayment(fromAccount, toBeneficiary, amount, id);
+predefinedPayments.forEach(({ id, fromAccount, toBeneficiary, amount, status }) => {
+  const payment = generatePayment(fromAccount, toBeneficiary, amount, id, status);
   payments[payment.paymentId] = payment;
 });
 
