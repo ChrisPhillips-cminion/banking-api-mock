@@ -36,7 +36,6 @@ CURRENT_TEST_NUMBER=0
 
 # Failure tracking - associative array to count failures by reason
 declare -A FAILURE_REASONS
-MAX_SAME_FAILURES=3
 
 # Array to store failure details for summary
 FAILED_TESTS_DETAILS=()
@@ -93,20 +92,9 @@ print_failure() {
     # Store failure details
     store_failure_detail "$CURRENT_TEST_NUMBER" "$description" "$failure_reason" "$LAST_CURL_CMD"
     
-    # Track failure by reason
+    # Track failure by reason for summary
     if [ -n "$failure_reason" ]; then
         ((FAILURE_REASONS["$failure_reason"]++))
-        local count=${FAILURE_REASONS["$failure_reason"]}
-        
-        if [ $count -ge $MAX_SAME_FAILURES ]; then
-            echo ""
-            echo -e "${RED}════════════════════════════════════════${NC}"
-            echo -e "${RED}STOPPING: $count tests failed with same reason${NC}"
-            echo -e "${RED}Reason: $failure_reason${NC}"
-            echo -e "${RED}════════════════════════════════════════${NC}"
-            echo ""
-            print_summary_and_exit
-        fi
     fi
 }
 
@@ -142,32 +130,6 @@ print_failure_summary() {
     echo ""
 }
 
-print_summary_and_exit() {
-    # Calculate estimated total tests based on validation calls in the script
-    local estimated_total=$(grep -E "validate_status|validate_json|validate_field|validate_content_type" "$0" 2>/dev/null | wc -l | tr -d ' ')
-    local skipped_tests=$((estimated_total - TOTAL_TESTS))
-    
-    print_header "Test Summary (Early Exit)"
-    echo ""
-    echo -e "Validations Run:   ${BLUE}$TOTAL_TESTS${NC}"
-    echo -e "Passed:            ${GREEN}$PASSED_TESTS${NC}"
-    echo -e "Failed:            ${RED}$FAILED_TESTS${NC}"
-    if [ "$estimated_total" -gt 0 ] && [ $skipped_tests -gt 0 ]; then
-        echo -e "Skipped:           ${YELLOW}$skipped_tests${NC} (not run due to early exit)"
-        echo -e "Total Validations: ${BLUE}$estimated_total${NC}"
-    fi
-    echo ""
-    echo -e "${RED}Test run stopped early due to repeated failures${NC}"
-    echo ""
-    echo "Failure breakdown by reason:"
-    for reason in "${!FAILURE_REASONS[@]}"; do
-        echo -e "  ${RED}${FAILURE_REASONS[$reason]}x${NC} - $reason"
-    done
-    echo ""
-    
-    print_failure_summary
-    exit 1
-}
 
 print_info() {
     echo -e "${YELLOW}  ℹ $1${NC}"
