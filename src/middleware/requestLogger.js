@@ -1,6 +1,26 @@
 const { v4: uuidv4 } = require('uuid');
 
 /**
+ * Sanitize log output to remove sensitive patterns and unwanted characters
+ */
+const sanitizeLogOutput = (str) => {
+  if (typeof str !== 'string') return str;
+  
+  // Remove nginx-style worker process patterns like "179#179: *31"
+  str = str.replace(/\d+#\d+:\s*\*\d+/g, '[sanitized]');
+  
+  // Remove potential sensitive patterns
+  str = str.replace(/password[=:]\s*\S+/gi, 'password=[REDACTED]');
+  str = str.replace(/token[=:]\s*\S+/gi, 'token=[REDACTED]');
+  str = str.replace(/secret[=:]\s*\S+/gi, 'secret=[REDACTED]');
+  
+  // Remove control characters except newlines and tabs
+  str = str.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  
+  return str;
+};
+
+/**
  * Request logging and correlation ID middleware
  */
 const requestLogger = (req, res, next) => {
@@ -27,8 +47,9 @@ const requestLogger = (req, res, next) => {
   
   const authString = authInfo.length > 0 ? ` | Auth: ${authInfo.join(', ')}` : '';
 
-  // Log request with authentication info
-  console.log(`[${req.requestTime}] ${req.method} ${req.path} - Correlation ID: ${req.headers['x-correlation-id']}${authString}`);
+  // Sanitize and log request with authentication info
+  const logMessage = `[${req.requestTime}] ${req.method} ${req.path} - Correlation ID: ${req.headers['x-correlation-id']}${authString}`;
+  console.log(sanitizeLogOutput(logMessage));
 
   // Add response headers
   res.setHeader('X-Correlation-Id', req.headers['x-correlation-id']);
@@ -38,6 +59,6 @@ const requestLogger = (req, res, next) => {
   next();
 };
 
-module.exports = { requestLogger };
+module.exports = { requestLogger, sanitizeLogOutput };
 
 // Made with Bob

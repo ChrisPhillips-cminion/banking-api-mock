@@ -1,10 +1,13 @@
 const { v4: uuidv4 } = require('uuid');
+const { sanitizeLogOutput } = require('./requestLogger');
 
 /**
  * Global error handler middleware
  */
 const errorHandler = (err, req, res, next) => {
-  console.error('Error:', err);
+  // Sanitize error message before logging
+  const sanitizedMessage = sanitizeLogOutput(err.message || 'Unknown error');
+  console.error('Error:', sanitizedMessage);
 
   const correlationId = req.headers['x-correlation-id'] || uuidv4();
   const timestamp = new Date().toISOString();
