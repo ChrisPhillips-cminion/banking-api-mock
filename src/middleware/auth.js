@@ -54,6 +54,11 @@ const authMiddleware = (req, res, next) => {
         error: {
           code: 'INVALID_CREDENTIALS',
           message: `Invalid API key (too short). Received: ${apiKey}`,
+          details: {
+            receivedKey: apiKey,
+            keyLength: apiKey.length,
+            minimumLength: 10
+          },
           timestamp: new Date().toISOString(),
           correlationId: req.headers['x-correlation-id'] || uuidv4()
         }
@@ -65,6 +70,10 @@ const authMiddleware = (req, res, next) => {
         error: {
           code: 'INVALID_CREDENTIALS',
           message: `Invalid API key. Received: ${apiKey}`,
+          details: {
+            receivedKey: apiKey,
+            reason: 'Key not in whitelist'
+          },
           timestamp: new Date().toISOString(),
           correlationId: req.headers['x-correlation-id'] || uuidv4()
         }
@@ -79,6 +88,11 @@ const authMiddleware = (req, res, next) => {
         error: {
           code: 'INVALID_CREDENTIALS',
           message: `Invalid Client ID (too short). Received: ${clientId}`,
+          details: {
+            receivedClientId: clientId,
+            clientIdLength: clientId.length,
+            minimumLength: 10
+          },
           timestamp: new Date().toISOString(),
           correlationId: req.headers['x-correlation-id'] || uuidv4()
         }
@@ -90,6 +104,10 @@ const authMiddleware = (req, res, next) => {
         error: {
           code: 'INVALID_CREDENTIALS',
           message: `Invalid Client ID. Received: ${clientId}`,
+          details: {
+            receivedClientId: clientId,
+            reason: 'Client ID not in whitelist'
+          },
           timestamp: new Date().toISOString(),
           correlationId: req.headers['x-correlation-id'] || uuidv4()
         }

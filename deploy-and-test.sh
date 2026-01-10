@@ -219,10 +219,34 @@ else
 fi
 
 ##############################################################################
-# Step 3: OpenShift Build
+# Step 3: Clean Up Completed Pods
 ##############################################################################
 
-print_header "Step 3: OpenShift Build"
+print_header "Step 3: Clean Up Completed Pods"
+
+print_step "Removing completed and failed pods..."
+completed_count=$(oc get pods --field-selector=status.phase==Succeeded -o name 2>/dev/null | wc -l | tr -d ' ')
+failed_count=$(oc get pods --field-selector=status.phase==Failed -o name 2>/dev/null | wc -l | tr -d ' ')
+
+if [ "$completed_count" -gt 0 ]; then
+    oc delete pods --field-selector=status.phase==Succeeded 2>/dev/null || true
+    print_success "Removed $completed_count completed pod(s)"
+else
+    print_info "No completed pods to remove"
+fi
+
+if [ "$failed_count" -gt 0 ]; then
+    oc delete pods --field-selector=status.phase==Failed 2>/dev/null || true
+    print_success "Removed $failed_count failed pod(s)"
+else
+    print_info "No failed pods to remove"
+fi
+
+##############################################################################
+# Step 4: OpenShift Build
+##############################################################################
+
+print_header "Step 4: OpenShift Build"
 
 # Start new build
 print_step "Starting new build..."
@@ -270,10 +294,10 @@ else
 fi
 
 ##############################################################################
-# Step 4: Wait for Deployment
+# Step 5: Wait for Deployment
 ##############################################################################
 
-print_header "Step 4: Wait for Deployment"
+print_header "Step 5: Wait for Deployment"
 
 if wait_for_deployment; then
     echo ""
@@ -301,10 +325,10 @@ else
 fi
 
 ##############################################################################
-# Step 5: Health Check
+# Step 6: Health Check
 ##############################################################################
 
-print_header "Step 5: Health Check"
+print_header "Step 6: Health Check"
 
 if [ -n "$ROUTE_URL" ]; then
     print_step "Testing health endpoint..."
@@ -322,10 +346,10 @@ else
 fi
 
 ##############################################################################
-# Step 6: Run Tests
+# Step 7: Run Tests
 ##############################################################################
 
-print_header "Step 6: Run Test Suite"
+print_header "Step 7: Run Test Suite"
 
 if [ -f "tests/test-all-endpoints.sh" ]; then
     print_step "Running quick test suite..."
