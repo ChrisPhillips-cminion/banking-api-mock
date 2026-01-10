@@ -41,17 +41,36 @@ predefinedTransactions.forEach(({ id, accountId, type }) => {
  * GET /transactions
  * Get list of transactions
  */
-router.get('/', (req, res) => {
-  const { 
-    page = 1, 
-    limit = 20, 
-    accountId, 
-    startDate, 
-    endDate, 
+router.get('/', (req, res, next) => {
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 20;
+  const {
+    accountId,
+    startDate,
+    endDate,
     transactionType,
     minAmount,
     maxAmount
   } = req.query;
+  
+  // Validate query parameters
+  if (page < 1) {
+    return next(createError(400, 'INVALID_PARAMETER', 'Page number must be positive'));
+  }
+  
+  if (limit < 1 || limit > 1000) {
+    return next(createError(400, 'INVALID_PARAMETER', 'Limit must be between 1 and 1000'));
+  }
+  
+  // Validate date formats
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (startDate && !dateRegex.test(startDate)) {
+    return next(createError(400, 'INVALID_PARAMETER', 'Start date must be in YYYY-MM-DD format'));
+  }
+  
+  if (endDate && !dateRegex.test(endDate)) {
+    return next(createError(400, 'INVALID_PARAMETER', 'End date must be in YYYY-MM-DD format'));
+  }
   
   let transactionList = Object.values(transactions);
   
@@ -67,26 +86,26 @@ router.get('/', (req, res) => {
   
   // Filter by date range
   if (startDate) {
-    transactionList = transactionList.filter(txn => 
+    transactionList = transactionList.filter(txn =>
       new Date(txn.transactionDate) >= new Date(startDate)
     );
   }
   
   if (endDate) {
-    transactionList = transactionList.filter(txn => 
+    transactionList = transactionList.filter(txn =>
       new Date(txn.transactionDate) <= new Date(endDate)
     );
   }
   
   // Filter by amount range
   if (minAmount) {
-    transactionList = transactionList.filter(txn => 
+    transactionList = transactionList.filter(txn =>
       Math.abs(txn.amount) >= parseFloat(minAmount)
     );
   }
   
   if (maxAmount) {
-    transactionList = transactionList.filter(txn => 
+    transactionList = transactionList.filter(txn =>
       Math.abs(txn.amount) <= parseFloat(maxAmount)
     );
   }
@@ -96,7 +115,7 @@ router.get('/', (req, res) => {
   
   // Pagination
   const startIndex = (page - 1) * limit;
-  const endIndex = startIndex + parseInt(limit);
+  const endIndex = startIndex + limit;
   const paginatedTransactions = transactionList.slice(startIndex, endIndex);
   
   res.json({

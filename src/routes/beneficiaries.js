@@ -25,7 +25,9 @@ predefinedBeneficiaries.forEach(({ id, type }) => {
  * Get list of beneficiaries
  */
 router.get('/', (req, res) => {
-  const { page = 1, limit = 20, beneficiaryType, status } = req.query;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 20;
+  const { beneficiaryType, status } = req.query;
   
   let beneficiaryList = Object.values(beneficiaries);
   
@@ -41,7 +43,7 @@ router.get('/', (req, res) => {
   
   // Pagination
   const startIndex = (page - 1) * limit;
-  const endIndex = startIndex + parseInt(limit);
+  const endIndex = startIndex + limit;
   const paginatedBeneficiaries = beneficiaryList.slice(startIndex, endIndex);
   
   res.json({

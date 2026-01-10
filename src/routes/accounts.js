@@ -24,10 +24,19 @@ predefinedAccounts.forEach(({ id, type }) => {
  * GET /accounts
  * Get list of accounts
  */
-router.get('/', (req, res) => {
+router.get('/', (req, res, next) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 20;
   const { accountType } = req.query;
+  
+  // Validate query parameters
+  if (page < 1) {
+    return next(createError(400, 'INVALID_PARAMETER', 'Page number must be positive'));
+  }
+  
+  if (limit < 1 || limit > 1000) {
+    return next(createError(400, 'INVALID_PARAMETER', 'Limit must be between 1 and 1000'));
+  }
   
   let accountList = Object.values(accounts);
   
