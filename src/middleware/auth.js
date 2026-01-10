@@ -37,12 +37,24 @@ const authMiddleware = (req, res, next) => {
     }
   }
   
-  // Validate API key or Client ID length
-  if ((apiKey && apiKey.length < 10) || (clientId && clientId.length < 10)) {
+  // Validate API key length if provided
+  if (apiKey && apiKey.length < 10) {
     return res.status(401).json({
       error: {
         code: 'INVALID_CREDENTIALS',
-        message: 'Invalid API key or Client ID',
+        message: 'Invalid API key',
+        timestamp: new Date().toISOString(),
+        correlationId: req.headers['x-correlation-id'] || uuidv4()
+      }
+    });
+  }
+  
+  // Validate Client ID length if provided
+  if (clientId && clientId.length < 10) {
+    return res.status(401).json({
+      error: {
+        code: 'INVALID_CREDENTIALS',
+        message: 'Invalid Client ID',
         timestamp: new Date().toISOString(),
         correlationId: req.headers['x-correlation-id'] || uuidv4()
       }

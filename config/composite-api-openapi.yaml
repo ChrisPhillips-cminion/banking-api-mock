@@ -1,0 +1,361 @@
+openapi: 3.0.3
+info:
+  title: Banking Composite API
+  version: 1.0.0
+  description: |
+    # Banking Composite API
+    
+    A composite API that aggregates account and transaction data into a single XML response.
+    This API calls the Banking Services API endpoints and combines the results.
+    
+    ## Features
+    - Retrieves account details and recent transactions in one call
+    - Returns data in XML format
+    - Passes through client authentication
+    
+  contact:
+    name: API Support Team
+    email: api-support@bankingservices.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: https://api.bankingservices.com/composite/v1
+    description: Production server
+  - url: https://sandbox-api.bankingservices.com/composite/v1
+    description: Sandbox server for testing
+
+x-ibm-name: banking-composite-api
+x-ibm-configuration:
+  enforced: true
+  testable: true
+  phase: realized
+  cors:
+    enabled: true
+  assembly:
+    execute:
+      - validate:
+          version: 2.0.0
+          title: validate-input
+          validate-request: true
+          validate-response: false
+      - gatewayscript:
+          version: 2.0.0
+          title: set-client-id
+          source: |
+            // Pass through the client ID to downstream calls
+            context.set('client.id', context.get('message.headers.x-ibm-client-id'));
+            // Set operation switch for account call
+            context.set('operation.switch.account', 'get-account');
+            // Set operation switch for transactions call
+            context.set('operation.switch.transactions', 'get-transactions');
+      - operation-switch:
+          version: 2.0.0
+          title: account-operation-switch
+          case:
+            - operations:
+                - getAccountSummary
+              execute:
+                - invoke:
+                    version: 2.0.0
+                    title: get-account-details
+                    target-url: $(banking-api-url)/accounts/$(request.parameters.accountId)
+                    timeout: 30
+                    verb: GET
+                    header-control:
+                      type: allowlist
+                      values:
+                        - X-IBM-Client-Id
+                    output: account-response
+      - operation-switch:
+          version: 2.0.0
+          title: transactions-operation-switch
+          case:
+            - operations:
+                - getAccountSummary
+              execute:
+                - invoke:
+                    version: 2.0.0
+                    title: get-account-transactions
+                    target-url: $(banking-api-url)/accounts/$(request.parameters.accountId)/transactions?limit=10
+                    timeout: 30
+                    verb: GET
+                    header-control:
+                      type: allowlist
+                      values:
+                        - X-IBM-Client-Id
+                    output: transactions-response
+      - map:
+          version: 2.0.0
+          title: map-to-xml
+          inputs:
+            account:
+              schema:
+                type: object
+                properties:
+                  accountId:
+                    type: string
+                  accountNumber:
+                    type: string
+                  accountType:
+                    type: string
+                  currency:
+                    type: string
+                  status:
+                    type: string
+                  availableBalance:
+                    type: number
+                  currentBalance:
+                    type: number
+              variable: account-response.body
+            transactions:
+              schema:
+                type: object
+                properties:
+                  transactions:
+                    type: array
+              variable: transactions-response.body
+          outputs:
+            xml:
+              schema:
+                type: string
+              variable: message.body
+              content: application/xml
+          actions:
+            - set: xml
+              from: |
+                '<?xml version="1.0" encoding="UTF-8"?>\n' +
+                '<AccountSummary>\n' +
+                '  <Account>\n' +
+                '    <AccountId>' + account.accountId + '</AccountId>\n' +
+                '    <AccountNumber>' + account.accountNumber + '</AccountNumber>\n' +
+                '    <AccountType>' + account.accountType + '</AccountType>\n' +
+                '    <Currency>' + account.currency + '</Currency>\n' +
+                '    <Status>' + account.status + '</Status>\n' +
+                '    <Balance>\n' +
+                '      <Available>' + account.availableBalance + '</Available>\n' +
+                '      <Current>' + account.currentBalance + '</Current>\n' +
+                '    </Balance>\n' +
+                '  </Account>\n' +
+                '  <RecentTransactions>\n' +
+                (transactions.transactions || []).map(function(txn) {
+                  return '    <Transaction>\n' +
+                         '      <TransactionId>' + txn.transactionId + '</TransactionId>\n' +
+                         '      <Type>' + txn.transactionType + '</Type>\n' +
+                         '      <Amount>' + txn.amount + '</Amount>\n' +
+                         '      <Currency>' + txn.currency + '</Currency>\n' +
+                         '      <Description>' + escapeXml(txn.description) + '</Description>\n' +
+                         '      <Date>' + txn.transactionDate + '</Date>\n' +
+                         '      <Status>' + txn.status + '</Status>\n' +
+                         '    </Transaction>\n';
+                }).join('') +
+                '  </RecentTransactions>\n' +
+                '</AccountSummary>'
+      - gatewayscript:
+          version: 2.0.0
+          title: finalize-xml-response
+          source: |
+            // Helper function to escape XML special characters
+            function escapeXml(unsafe) {
+              if (!unsafe) return '';
+              return String(unsafe).replace(/[<>&'"]/g, function (c) {
+                switch (c) {
+                  case '<': return '<';
+                  case '>': return '>';
+                  case '&': return '&';
+                  case '\'': return ''';
+                  case '"': return '"';
+                }
+              });
+            }
+            
+            // Ensure Content-Type is set to XML
+            context.message.header.set('Content-Type', 'application/xml');
+            
+            // Validate response was created by map policy
+            var body = context.message.body.readAsString();
+            if (!body || body.indexOf('<?xml') !== 0) {
+              // Fallback: build XML from responses if map policy failed
+              var accountData = context.get('account-response.body');
+              var transactionsData = context.get('transactions-response.body');
+              
+              var xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+              xml += '<AccountSummary>\n';
+              xml += '  <Account>\n';
+              xml += '    <AccountId>' + escapeXml(accountData.accountId) + '</AccountId>\n';
+              xml += '    <AccountNumber>' + escapeXml(accountData.accountNumber) + '</AccountNumber>\n';
+              xml += '    <AccountType>' + escapeXml(accountData.accountType) + '</AccountType>\n';
+              xml += '    <Currency>' + escapeXml(accountData.currency) + '</Currency>\n';
+              xml += '    <Status>' + escapeXml(accountData.status) + '</Status>\n';
+              xml += '    <Balance>\n';
+              xml += '      <Available>' + accountData.availableBalance + '</Available>\n';
+              xml += '      <Current>' + accountData.currentBalance + '</Current>\n';
+              xml += '    </Balance>\n';
+              xml += '  </Account>\n';
+              xml += '  <RecentTransactions>\n';
+              
+              if (transactionsData.transactions && transactionsData.transactions.length > 0) {
+                for (var i = 0; i < transactionsData.transactions.length; i++) {
+                  var txn = transactionsData.transactions[i];
+                  xml += '    <Transaction>\n';
+                  xml += '      <TransactionId>' + escapeXml(txn.transactionId) + '</TransactionId>\n';
+                  xml += '      <Type>' + escapeXml(txn.transactionType) + '</Type>\n';
+                  xml += '      <Amount>' + txn.amount + '</Amount>\n';
+                  xml += '      <Currency>' + escapeXml(txn.currency) + '</Currency>\n';
+                  xml += '      <Description>' + escapeXml(txn.description) + '</Description>\n';
+                  xml += '      <Date>' + escapeXml(txn.transactionDate) + '</Date>\n';
+                  xml += '      <Status>' + escapeXml(txn.status) + '</Status>\n';
+                  xml += '    </Transaction>\n';
+                }
+              }
+              
+              xml += '  </RecentTransactions>\n';
+              xml += '</AccountSummary>';
+              
+              context.message.body.write(xml);
+            }
+    catch:
+      - errors:
+          - ConnectionError
+        execute:
+          - gatewayscript:
+              version: 2.0.0
+              title: error-handler
+              source: |
+                var errorXml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+                errorXml += '<Error>\n';
+                errorXml += '  <Code>SERVICE_UNAVAILABLE</Code>\n';
+                errorXml += '  <Message>Unable to connect to banking service</Message>\n';
+                errorXml += '  <Timestamp>' + new Date().toISOString() + '</Timestamp>\n';
+                errorXml += '</Error>';
+                
+                context.message.statusCode = '503';
+                context.message.header.set('Content-Type', 'application/xml');
+                context.message.body.write(errorXml);
+  gateway: datapower-api-gateway
+  properties:
+    banking-api-url:
+      value: https://small-gw-gateway-cp4i.apps.buttons.hur.hdclab.intranet.ibm.com/c62ce85c-0f44-4dc9-a9ff-c1b702f776b5/sandbox/api.bankingservices.com/v1
+      description: Banking Services API base URL
+      encoded: false
+
+security:
+  - clientId: []
+
+paths:
+  /account-summary/{accountId}:
+    get:
+      tags:
+        - Composite
+      summary: Get account summary with recent transactions
+      description: |
+        Retrieves account details and recent transactions in a single call.
+        Returns data in XML format combining information from multiple endpoints.
+      operationId: getAccountSummary
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          description: Account ID to retrieve summary for
+          schema:
+            type: string
+            pattern: '^acc-\d{9}$'
+          example: acc-123456789
+      responses:
+        '200':
+          description: Successful response with account summary
+          content:
+            application/xml:
+              schema:
+                type: string
+              example: |
+                <?xml version="1.0" encoding="UTF-8"?>
+                <AccountSummary>
+                  <Account>
+                    <AccountId>acc-123456789</AccountId>
+                    <AccountNumber>****1234</AccountNumber>
+                    <AccountType>CHECKING</AccountType>
+                    <Currency>GBP</Currency>
+                    <Status>ACTIVE</Status>
+                    <Balance>
+                      <Available>5432.10</Available>
+                      <Current>5432.10</Current>
+                    </Balance>
+                  </Account>
+                  <RecentTransactions>
+                    <Transaction>
+                      <TransactionId>txn-20260109-001</TransactionId>
+                      <Type>DEBIT</Type>
+                      <Amount>-45.99</Amount>
+                      <Currency>GBP</Currency>
+                      <Description>Amazon UK - Shopping</Description>
+                      <Date>2026-01-08T14:30:00Z</Date>
+                      <Status>COMPLETED</Status>
+                    </Transaction>
+                  </RecentTransactions>
+                </AccountSummary>
+        '400':
+          description: Invalid account ID format
+          content:
+            application/xml:
+              schema:
+                type: string
+              example: |
+                <?xml version="1.0" encoding="UTF-8"?>
+                <Error>
+                  <Code>INVALID_ACCOUNT_ID</Code>
+                  <Message>Invalid account ID format</Message>
+                  <Timestamp>2026-01-09T18:00:00Z</Timestamp>
+                </Error>
+        '401':
+          description: Unauthorized - missing or invalid client ID
+          content:
+            application/xml:
+              schema:
+                type: string
+              example: |
+                <?xml version="1.0" encoding="UTF-8"?>
+                <Error>
+                  <Code>UNAUTHORIZED</Code>
+                  <Message>Authentication required</Message>
+                  <Timestamp>2026-01-09T18:00:00Z</Timestamp>
+                </Error>
+        '404':
+          description: Account not found
+          content:
+            application/xml:
+              schema:
+                type: string
+              example: |
+                <?xml version="1.0" encoding="UTF-8"?>
+                <Error>
+                  <Code>ACCOUNT_NOT_FOUND</Code>
+                  <Message>Account not found</Message>
+                  <Timestamp>2026-01-09T18:00:00Z</Timestamp>
+                </Error>
+        '503':
+          description: Service unavailable
+          content:
+            application/xml:
+              schema:
+                type: string
+              example: |
+                <?xml version="1.0" encoding="UTF-8"?>
+                <Error>
+                  <Code>SERVICE_UNAVAILABLE</Code>
+                  <Message>Unable to connect to banking service</Message>
+                  <Timestamp>2026-01-09T18:00:00Z</Timestamp>
+                </Error>
+
+components:
+  securitySchemes:
+    clientId:
+      type: apiKey
+      description: Client ID for application identification
+      name: X-IBM-Client-Id
+      in: header
+      x-ibm-configuration:
+        key-type: client_id
+
+# Made with Bob
