@@ -71,7 +71,12 @@ router.get('/:accountId', (req, res, next) => {
     return next(createError(404, 'ACCOUNT_NOT_FOUND', `Account ${accountId} not found`));
   }
   
-  res.json(account);
+  // Return account with additional fields for compatibility
+  res.json({
+    ...account,
+    balance: account.currentBalance,  // Add balance field (alias for currentBalance)
+    lastActivityDate: account.lastTransactionDate  // Add lastActivityDate (alias for lastTransactionDate)
+  });
 });
 
 /**

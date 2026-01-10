@@ -25,6 +25,7 @@ TOTAL_TESTS=0
 PASSED_TESTS=0
 FAILED_TESTS=0
 EXPECTED_TOTAL_TESTS=0
+CURRENT_TEST_NUMBER=0
 
 # Failure tracking - associative array to count failures by reason
 declare -A FAILURE_REASONS
@@ -53,16 +54,18 @@ print_success() {
     ((PASSED_TESTS++))
     ((TOTAL_TESTS++))
     ((EXPECTED_TOTAL_TESTS++))
+    ((CURRENT_TEST_NUMBER++))
 }
 
 store_failure_detail() {
-    local test_name="$1"
-    local expected="$2"
-    local got="$3"
-    local endpoint="$4"
-    local curl_cmd="$5"
+    local test_number="$1"
+    local test_name="$2"
+    local expected="$3"
+    local got="$4"
+    local endpoint="$5"
+    local curl_cmd="$6"
     
-    FAILED_TESTS_DETAILS+=("TEST: $test_name|EXPECTED: HTTP $expected|GOT: HTTP $got|ENDPOINT: $endpoint|CURL: $curl_cmd")
+    FAILED_TESTS_DETAILS+=("TEST #$test_number: $test_name|EXPECTED: HTTP $expected|GOT: HTTP $got|ENDPOINT: $endpoint|CURL: $curl_cmd")
 }
 
 print_failure() {
@@ -70,7 +73,8 @@ print_failure() {
     local response="$2"
     local failure_reason="$3"
     
-    echo -e "${RED}✗ FAIL: ${description}${NC}"
+    ((CURRENT_TEST_NUMBER++))
+    echo -e "${RED}✗ FAIL #${CURRENT_TEST_NUMBER}: ${description}${NC}"
     ((FAILED_TESTS++))
     ((TOTAL_TESTS++))
     ((EXPECTED_TOTAL_TESTS++))
@@ -236,11 +240,12 @@ test_endpoint() {
     else
         # Create a failure reason based on the HTTP status code mismatch
         local failure_reason="HTTP_STATUS_MISMATCH_Expected_${expected_status}_Got_${http_code}"
+        local test_num=$((CURRENT_TEST_NUMBER + 1))
         print_failure "$description (Expected: $expected_status, Got: $http_code)" "$body" "$failure_reason"
         echo -e "${YELLOW}  Debug: $curl_cmd${NC}"
         
         # Store failure details for summary
-        store_failure_detail "$description" "$expected_status" "$http_code" "$endpoint" "$curl_cmd"
+        store_failure_detail "$test_num" "$description" "$expected_status" "$http_code" "$endpoint" "$curl_cmd"
     fi
     
     sleep 0.5

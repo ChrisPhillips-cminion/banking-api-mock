@@ -25,10 +25,14 @@ NC='\033[0m' # No Color
 TOTAL_TESTS=0
 PASSED_TESTS=0
 FAILED_TESTS=0
+CURRENT_TEST_NUMBER=0
 
 # Failure tracking - associative array to count failures by reason
 declare -A FAILURE_REASONS
 MAX_SAME_FAILURES=3
+
+# Array to store failure details for summary
+FAILED_TESTS_DETAILS=()
 
 # Temp files
 RESPONSE_FILE=$(mktemp)
@@ -56,17 +60,31 @@ print_test() {
 print_success() {
     echo -e "${GREEN}  ✓ $1${NC}"
     ((PASSED_TESTS++))
+    ((CURRENT_TEST_NUMBER++))
+}
+
+store_failure_detail() {
+    local test_number="$1"
+    local test_name="$2"
+    local details="$3"
+    local curl_cmd="$4"
+    
+    FAILED_TESTS_DETAILS+=("TEST #$test_number: $test_name|DETAILS: $details|CURL: $curl_cmd")
 }
 
 print_failure() {
     local description="$1"
     local failure_reason="$2"
     
-    echo -e "${RED}  ✗ ${description}${NC}"
+    ((CURRENT_TEST_NUMBER++))
+    echo -e "${RED}  ✗ #${CURRENT_TEST_NUMBER}: ${description}${NC}"
     if [ -n "$LAST_CURL_CMD" ]; then
         echo -e "${YELLOW}  Debug: $LAST_CURL_CMD${NC}"
     fi
     ((FAILED_TESTS++))
+    
+    # Store failure details
+    store_failure_detail "$CURRENT_TEST_NUMBER" "$description" "$failure_reason" "$LAST_CURL_CMD"
     
     # Track failure by reason
     if [ -n "$failure_reason" ]; then
@@ -83,6 +101,38 @@ print_failure() {
             print_summary_and_exit
         fi
     fi
+}
+
+print_failure_summary() {
+    if [ ${#FAILED_TESTS_DETAILS[@]} -eq 0 ]; then
+        return
+    fi
+    
+    echo ""
+    echo -e "${YELLOW}════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}Failed Tests Summary${NC}"
+    echo -e "${YELLOW}════════════════════════════════════════${NC}"
+    echo ""
+    
+    for detail in "${FAILED_TESTS_DETAILS[@]}"; do
+        IFS='|' read -ra PARTS <<< "$detail"
+        echo -e "${RED}${PARTS[0]}${NC}"
+        echo -e "  ${PARTS[1]}"
+        echo -e "  ${YELLOW}${PARTS[2]}${NC}"
+        echo ""
+    done
+    
+    echo -e "${CYAN}════════════════════════════════════════${NC}"
+    echo -e "${CYAN}Copy this prompt to fix the issues:${NC}"
+    echo -e "${CYAN}════════════════════════════════════════${NC}"
+    echo ""
+    echo "Fix the following test failures in the banking API composite endpoint:"
+    echo ""
+    for detail in "${FAILED_TESTS_DETAILS[@]}"; do
+        IFS='|' read -ra PARTS <<< "$detail"
+        echo "- ${PARTS[0]}: ${PARTS[1]}"
+    done
+    echo ""
 }
 
 print_summary_and_exit() {
@@ -107,6 +157,8 @@ print_summary_and_exit() {
         echo -e "  ${RED}${FAILURE_REASONS[$reason]}x${NC} - $reason"
     done
     echo ""
+    
+    print_failure_summary
     exit 1
 }
 
@@ -556,6 +608,7 @@ else
     echo -e "${YELLOW}════════════════════════════════════════${NC}"
     echo -e "${YELLOW}   Pass rate: ${pass_rate}%${NC}"
     echo -e "${YELLOW}════════════════════════════════════════${NC}"
+    print_failure_summary
     exit 1
 fi
 
