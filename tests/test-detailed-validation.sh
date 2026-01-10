@@ -33,6 +33,10 @@ TOTAL_TESTS=0
 PASSED_TESTS=0
 FAILED_TESTS=0
 
+# Failure tracking - associative array to count failures by reason
+declare -A FAILURE_REASONS
+MAX_SAME_FAILURES=3
+
 # Temp files
 RESPONSE_FILE=$(mktemp)
 HEADERS_FILE=$(mktemp)
@@ -62,8 +66,55 @@ print_success() {
 }
 
 print_failure() {
-    echo -e "${RED}  ✗ $1${NC}"
+    local description="$1"
+    local failure_reason="$2"
+    
+    echo -e "${RED}  ✗ ${description}${NC}"
+    if [ -n "$LAST_CURL_CMD" ]; then
+        echo -e "${YELLOW}  Debug: $LAST_CURL_CMD${NC}"
+    fi
     ((FAILED_TESTS++))
+    
+    # Track failure by reason
+    if [ -n "$failure_reason" ]; then
+        ((FAILURE_REASONS["$failure_reason"]++))
+        local count=${FAILURE_REASONS["$failure_reason"]}
+        
+        if [ $count -ge $MAX_SAME_FAILURES ]; then
+            echo ""
+            echo -e "${RED}════════════════════════════════════════${NC}"
+            echo -e "${RED}STOPPING: $count tests failed with same reason${NC}"
+            echo -e "${RED}Reason: $failure_reason${NC}"
+            echo -e "${RED}════════════════════════════════════════${NC}"
+            echo ""
+            print_summary_and_exit
+        fi
+    fi
+}
+
+print_summary_and_exit() {
+    # Calculate estimated total tests based on validation calls in the script
+    local estimated_total=$(grep -E "validate_status|validate_json|validate_field|validate_content_type" "$0" 2>/dev/null | wc -l | tr -d ' ')
+    local skipped_tests=$((estimated_total - TOTAL_TESTS))
+    
+    print_header "Test Summary (Early Exit)"
+    echo ""
+    echo -e "Validations Run:   ${BLUE}$TOTAL_TESTS${NC}"
+    echo -e "Passed:            ${GREEN}$PASSED_TESTS${NC}"
+    echo -e "Failed:            ${RED}$FAILED_TESTS${NC}"
+    if [ "$estimated_total" -gt 0 ] && [ $skipped_tests -gt 0 ]; then
+        echo -e "Skipped:           ${YELLOW}$skipped_tests${NC} (not run due to early exit)"
+        echo -e "Total Validations: ${BLUE}$estimated_total${NC}"
+    fi
+    echo ""
+    echo -e "${RED}Test run stopped early due to repeated failures${NC}"
+    echo ""
+    echo "Failure breakdown by reason:"
+    for reason in "${!FAILURE_REASONS[@]}"; do
+        echo -e "  ${RED}${FAILURE_REASONS[$reason]}x${NC} - $reason"
+    done
+    echo ""
+    exit 1
 }
 
 print_info() {
@@ -76,6 +127,13 @@ make_request() {
     local endpoint=$2
     local data=$3
     local auth_header=${4:-"X-IBM-Client-Id: $CLIENT_ID"}
+    
+    # Build curl command for debugging
+    LAST_CURL_CMD="curl -k -X $method -H \"$auth_header\" -H \"Content-Type: application/json\""
+    if [ -n "$data" ]; then
+        LAST_CURL_CMD="$LAST_CURL_CMD -d '$data'"
+    fi
+    LAST_CURL_CMD="$LAST_CURL_CMD \"${BASE_URL}${endpoint}\""
     
     if [ "$method" = "GET" ]; then
         curl -n -k -s -D "$HEADERS_FILE" -X GET \
@@ -112,7 +170,8 @@ validate_status() {
         print_success "HTTP Status: $actual (expected: $expected)"
         return 0
     else
-        print_failure "HTTP Status: $actual (expected: $expected)"
+        local failure_reason="HTTP_STATUS_Expected_${expected}_Got_${actual}"
+        print_failure "HTTP Status: $actual (expected: $expected)" "$failure_reason"
         return 1
     fi
 }
@@ -127,7 +186,8 @@ validate_content_type() {
         print_success "Content-Type: $actual"
         return 0
     else
-        print_failure "Content-Type: $actual (expected: $expected)"
+        local failure_reason="CONTENT_TYPE_MISMATCH"
+        print_failure "Content-Type: $actual (expected: $expected)" "$failure_reason"
         return 1
     fi
 }
@@ -139,7 +199,8 @@ validate_json() {
         print_success "Valid JSON structure"
         return 0
     else
-        print_failure "Invalid JSON structure"
+        local failure_reason="INVALID_JSON_STRUCTURE"
+        print_failure "Invalid JSON structure" "$failure_reason"
         cat "$RESPONSE_FILE"
         return 1
     fi
@@ -155,7 +216,8 @@ validate_field_exists() {
         print_success "Field exists: $field = $value"
         return 0
     else
-        print_failure "Field missing or null: $field"
+        local failure_reason="FIELD_MISSING_OR_NULL"
+        print_failure "Field missing or null: $field" "$failure_reason"
         return 1
     fi
 }
@@ -171,7 +233,8 @@ validate_field_type() {
         print_success "Field type: $field is $actual_type"
         return 0
     else
-        print_failure "Field type: $field is $actual_type (expected: $expected_type)"
+        local failure_reason="FIELD_TYPE_MISMATCH"
+        print_failure "Field type: $field is $actual_type (expected: $expected_type)" "$failure_reason"
         return 1
     fi
 }
@@ -187,7 +250,8 @@ validate_field_value() {
         print_success "Field value: $field = $actual"
         return 0
     else
-        print_failure "Field value: $field = $actual (expected: $expected)"
+        local failure_reason="FIELD_VALUE_MISMATCH"
+        print_failure "Field value: $field = $actual (expected: $expected)" "$failure_reason"
         return 1
     fi
 }
@@ -204,7 +268,8 @@ validate_field_pattern() {
         print_success "Field pattern: $field matches $description"
         return 0
     else
-        print_failure "Field pattern: $field = '$actual' does not match $description"
+        local failure_reason="FIELD_PATTERN_MISMATCH_${description// /_}"
+        print_failure "Field pattern: $field = '$actual' does not match $description" "$failure_reason"
         return 1
     fi
 }
@@ -220,7 +285,8 @@ validate_array_length() {
         print_success "Array length: $field has $actual_length items (min: $min_length)"
         return 0
     else
-        print_failure "Array length: $field has $actual_length items (expected min: $min_length)"
+        local failure_reason="ARRAY_LENGTH_TOO_SHORT"
+        print_failure "Array length: $field has $actual_length items (expected min: $min_length)" "$failure_reason"
         return 1
     fi
 }

@@ -24,6 +24,11 @@ NC='\033[0m' # No Color
 TOTAL_TESTS=0
 PASSED_TESTS=0
 FAILED_TESTS=0
+EXPECTED_TOTAL_TESTS=0
+
+# Failure tracking - associative array to count failures by reason
+declare -A FAILURE_REASONS
+MAX_SAME_FAILURES=3
 
 ##############################################################################
 # Helper Functions
@@ -44,13 +49,61 @@ print_success() {
     echo -e "${GREEN}✓ PASS: $1${NC}"
     ((PASSED_TESTS++))
     ((TOTAL_TESTS++))
+    ((EXPECTED_TOTAL_TESTS++))
 }
 
 print_failure() {
-    echo -e "${RED}✗ FAIL: $1${NC}"
-    echo -e "${RED}  Response: $2${NC}"
+    local description="$1"
+    local response="$2"
+    local failure_reason="$3"
+    
+    echo -e "${RED}✗ FAIL: ${description}${NC}"
+    echo -e "${RED}  Response: ${response}${NC}"
     ((FAILED_TESTS++))
     ((TOTAL_TESTS++))
+    ((EXPECTED_TOTAL_TESTS++))
+    
+    # Track failure by reason
+    if [ -n "$failure_reason" ]; then
+        ((FAILURE_REASONS["$failure_reason"]++))
+        local count=${FAILURE_REASONS["$failure_reason"]}
+        
+        if [ $count -ge $MAX_SAME_FAILURES ]; then
+            echo ""
+            echo -e "${RED}════════════════════════════════════════${NC}"
+            echo -e "${RED}STOPPING: $count tests failed with same reason${NC}"
+            echo -e "${RED}Reason: $failure_reason${NC}"
+            echo -e "${RED}════════════════════════════════════════${NC}"
+            echo ""
+            print_summary_and_exit
+        fi
+    fi
+}
+
+print_summary_and_exit() {
+    # Calculate estimated total tests based on the script structure
+    # This is an approximation - count test_endpoint calls in the script
+    local estimated_total=$(grep -c "test_endpoint" "$0" 2>/dev/null || echo "unknown")
+    local skipped_tests=$((estimated_total - TOTAL_TESTS))
+    
+    print_header "Test Summary (Early Exit)"
+    echo ""
+    echo -e "Tests Run:    ${BLUE}$TOTAL_TESTS${NC}"
+    echo -e "Passed:       ${GREEN}$PASSED_TESTS${NC}"
+    echo -e "Failed:       ${RED}$FAILED_TESTS${NC}"
+    if [ "$estimated_total" != "unknown" ] && [ $skipped_tests -gt 0 ]; then
+        echo -e "Skipped:      ${YELLOW}$skipped_tests${NC} (not run due to early exit)"
+        echo -e "Total Tests:  ${BLUE}$estimated_total${NC}"
+    fi
+    echo ""
+    echo -e "${RED}Test run stopped early due to repeated failures${NC}"
+    echo ""
+    echo "Failure breakdown by reason:"
+    for reason in "${!FAILURE_REASONS[@]}"; do
+        echo -e "  ${RED}${FAILURE_REASONS[$reason]}x${NC} - $reason"
+    done
+    echo ""
+    exit 1
 }
 
 test_endpoint() {
@@ -66,6 +119,15 @@ test_endpoint() {
     if [ -z "$auth_header" ]; then
         auth_header="X-IBM-Client-Id: $CLIENT_ID"
     fi
+    
+    # Build curl command for display
+    local curl_cmd="curl -k -X $method"
+    curl_cmd="$curl_cmd -H \"$auth_header\""
+    curl_cmd="$curl_cmd -H \"Content-Type: application/json\""
+    if [ -n "$data" ]; then
+        curl_cmd="$curl_cmd -d '$data'"
+    fi
+    curl_cmd="$curl_cmd \"${BASE_URL}${endpoint}\""
     
     if [ "$method" = "GET" ]; then
         response=$(curl -n -k -s -w "\n%{http_code}" -X GET \
@@ -98,7 +160,10 @@ test_endpoint() {
         print_success "$description (HTTP $http_code)"
         echo "  Response: $(echo $body | jq -c '.' 2>/dev/null || echo $body | head -c 100)"
     else
-        print_failure "$description (Expected: $expected_status, Got: $http_code)" "$body"
+        # Create a failure reason based on the HTTP status code mismatch
+        local failure_reason="HTTP_STATUS_MISMATCH_Expected_${expected_status}_Got_${http_code}"
+        print_failure "$description (Expected: $expected_status, Got: $http_code)" "$body" "$failure_reason"
+        echo -e "${YELLOW}  Debug: $curl_cmd${NC}"
     fi
     
     sleep 0.5

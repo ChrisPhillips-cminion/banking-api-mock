@@ -26,6 +26,10 @@ TOTAL_TESTS=0
 PASSED_TESTS=0
 FAILED_TESTS=0
 
+# Failure tracking - associative array to count failures by reason
+declare -A FAILURE_REASONS
+MAX_SAME_FAILURES=3
+
 # Temp files
 RESPONSE_FILE=$(mktemp)
 HEADERS_FILE=$(mktemp)
@@ -55,8 +59,55 @@ print_success() {
 }
 
 print_failure() {
-    echo -e "${RED}  ✗ $1${NC}"
+    local description="$1"
+    local failure_reason="$2"
+    
+    echo -e "${RED}  ✗ ${description}${NC}"
+    if [ -n "$LAST_CURL_CMD" ]; then
+        echo -e "${YELLOW}  Debug: $LAST_CURL_CMD${NC}"
+    fi
     ((FAILED_TESTS++))
+    
+    # Track failure by reason
+    if [ -n "$failure_reason" ]; then
+        ((FAILURE_REASONS["$failure_reason"]++))
+        local count=${FAILURE_REASONS["$failure_reason"]}
+        
+        if [ $count -ge $MAX_SAME_FAILURES ]; then
+            echo ""
+            echo -e "${RED}════════════════════════════════════════${NC}"
+            echo -e "${RED}STOPPING: $count tests failed with same reason${NC}"
+            echo -e "${RED}Reason: $failure_reason${NC}"
+            echo -e "${RED}════════════════════════════════════════${NC}"
+            echo ""
+            print_summary_and_exit
+        fi
+    fi
+}
+
+print_summary_and_exit() {
+    # Calculate estimated total tests based on validation calls in the script
+    local estimated_total=$(grep -E "validate_status|validate_xml|validate_field" "$0" 2>/dev/null | wc -l | tr -d ' ')
+    local skipped_tests=$((estimated_total - TOTAL_TESTS))
+    
+    print_header "Test Summary (Early Exit)"
+    echo ""
+    echo -e "Tests Run:    ${BLUE}$TOTAL_TESTS${NC}"
+    echo -e "Passed:       ${GREEN}$PASSED_TESTS${NC}"
+    echo -e "Failed:       ${RED}$FAILED_TESTS${NC}"
+    if [ "$estimated_total" -gt 0 ] && [ $skipped_tests -gt 0 ]; then
+        echo -e "Skipped:      ${YELLOW}$skipped_tests${NC} (not run due to early exit)"
+        echo -e "Total Tests:  ${BLUE}$estimated_total${NC}"
+    fi
+    echo ""
+    echo -e "${RED}Test run stopped early due to repeated failures${NC}"
+    echo ""
+    echo "Failure breakdown by reason:"
+    for reason in "${!FAILURE_REASONS[@]}"; do
+        echo -e "  ${RED}${FAILURE_REASONS[$reason]}x${NC} - $reason"
+    done
+    echo ""
+    exit 1
 }
 
 print_info() {
@@ -67,6 +118,9 @@ print_info() {
 make_request() {
     local endpoint=$1
     local auth_header=${2:-"X-IBM-Client-Id: $CLIENT_ID"}
+    
+    # Store curl command for debugging
+    LAST_CURL_CMD="curl -k -X GET -H \"$auth_header\" \"${BASE_URL}${endpoint}\""
     
     curl -n -k -s -D "$HEADERS_FILE" -X GET \
         -H "$auth_header" \
@@ -83,7 +137,8 @@ validate_status() {
         print_success "HTTP Status: $actual (expected: $expected)"
         return 0
     else
-        print_failure "HTTP Status: $actual (expected: $expected)"
+        local failure_reason="HTTP_STATUS_Expected_${expected}_Got_${actual}"
+        print_failure "HTTP Status: $actual (expected: $expected)" "$failure_reason"
         return 1
     fi
 }
@@ -97,7 +152,8 @@ validate_xml_content_type() {
         print_success "Content-Type: $actual (contains xml)"
         return 0
     else
-        print_failure "Content-Type: $actual (expected xml)"
+        local failure_reason="CONTENT_TYPE_NOT_XML"
+        print_failure "Content-Type: $actual (expected xml)" "$failure_reason"
         return 1
     fi
 }
@@ -109,7 +165,8 @@ validate_xml() {
         print_success "Valid XML structure"
         return 0
     else
-        print_failure "Invalid XML structure"
+        local failure_reason="INVALID_XML_STRUCTURE"
+        print_failure "Invalid XML structure" "$failure_reason"
         cat "$RESPONSE_FILE"
         return 1
     fi
@@ -126,7 +183,8 @@ validate_xml_element() {
         print_success "Element exists: $description = $value"
         return 0
     else
-        print_failure "Element missing: $description"
+        local failure_reason="XML_ELEMENT_MISSING_${description// /_}"
+        print_failure "Element missing: $description" "$failure_reason"
         return 1
     fi
 }
@@ -144,7 +202,8 @@ validate_xml_value() {
         print_success "Element value: $description = $actual"
         return 0
     else
-        print_failure "Element value: $description = $actual (expected: $expected)"
+        local failure_reason="XML_VALUE_MISMATCH_${description// /_}"
+        print_failure "Element value: $description = $actual (expected: $expected)" "$failure_reason"
         return 1
     fi
 }
@@ -162,7 +221,8 @@ validate_xml_pattern() {
         print_success "Element pattern: $description matches ($actual)"
         return 0
     else
-        print_failure "Element pattern: $description = '$actual' does not match pattern"
+        local failure_reason="XML_PATTERN_MISMATCH_${description// /_}"
+        print_failure "Element pattern: $description = '$actual' does not match pattern" "$failure_reason"
         return 1
     fi
 }
@@ -230,7 +290,8 @@ if command -v xmllint &> /dev/null; then
     if [ "$txn_count" -gt 0 ]; then
         print_success "Transaction count: $txn_count transactions found"
     else
-        print_failure "Transaction count: No transactions found"
+        local failure_reason="NO_TRANSACTIONS_FOUND"
+        print_failure "Transaction count: No transactions found" "$failure_reason"
     fi
     
     # Validate first transaction structure
@@ -339,7 +400,8 @@ if command -v xmllint &> /dev/null; then
     if xmllint --noout "$RESPONSE_FILE" 2>/dev/null; then
         print_success "XML properly escapes special characters"
     else
-        print_failure "XML contains unescaped special characters"
+        local failure_reason="XML_SPECIAL_CHARS_NOT_ESCAPED"
+        print_failure "XML contains unescaped special characters" "$failure_reason"
     fi
 fi
 
@@ -399,14 +461,16 @@ if command -v xmllint &> /dev/null; then
     if [[ "$available" =~ ^[0-9]+\.?[0-9]*$ ]]; then
         print_success "Available balance is numeric: $available"
     else
-        print_failure "Available balance is not numeric: $available"
+        local failure_reason="BALANCE_NOT_NUMERIC"
+        print_failure "Available balance is not numeric: $available" "$failure_reason"
     fi
     
     ((TOTAL_TESTS++))
     if [[ "$current" =~ ^[0-9]+\.?[0-9]*$ ]]; then
         print_success "Current balance is numeric: $current"
     else
-        print_failure "Current balance is not numeric: $current"
+        local failure_reason="BALANCE_NOT_NUMERIC"
+        print_failure "Current balance is not numeric: $current" "$failure_reason"
     fi
     
     # Validate transaction amounts are numeric
@@ -417,7 +481,8 @@ if command -v xmllint &> /dev/null; then
         if [[ "$amount" =~ ^-?[0-9]+\.?[0-9]*$ ]]; then
             print_success "Transaction amount is numeric: $amount"
         else
-            print_failure "Transaction amount is not numeric: $amount"
+            local failure_reason="AMOUNT_NOT_NUMERIC"
+            print_failure "Transaction amount is not numeric: $amount" "$failure_reason"
         fi
     fi
 fi
@@ -463,7 +528,8 @@ if command -v xmllint &> /dev/null; then
     if [ "$txn_count" -le 10 ]; then
         print_success "Transaction count within limit: $txn_count <= 10"
     else
-        print_failure "Transaction count exceeds limit: $txn_count > 10"
+        local failure_reason="TRANSACTION_COUNT_EXCEEDS_LIMIT"
+        print_failure "Transaction count exceeds limit: $txn_count > 10" "$failure_reason"
     fi
 fi
 
