@@ -97,12 +97,13 @@ router.put('/:paymentId/cancel', (req, res, next) => {
     return next(createError(422, 'PAYMENT_ALREADY_COMPLETED', 'Cannot cancel a completed payment'));
   }
   
-  if (payment.status === 'CANCELLED') {
-    return next(createError(422, 'PAYMENT_ALREADY_CANCELLED', 'Payment is already cancelled'));
-  }
-  
   if (!reason || reason.length < 5) {
     return next(createError(400, 'VALIDATION_ERROR', 'Cancellation reason must be at least 5 characters'));
+  }
+  
+  // If already cancelled, return success with current state (idempotent operation)
+  if (payment.status === 'CANCELLED') {
+    return res.json(payment);
   }
   
   // Update payment status

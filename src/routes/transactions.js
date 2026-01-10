@@ -6,8 +6,20 @@ const { createError } = require('../middleware/errorHandler');
 // In-memory storage for demo purposes
 const transactions = {};
 
-// Initialize with some mock transactions
-for (let i = 0; i < 20; i++) {
+// Initialize with some predefined transactions for testing
+const predefinedTransactions = [
+  { id: 'txn-20260109-001', accountId: 'acc-123456789' },
+  { id: 'txn-20260109-002', accountId: 'acc-987654321' },
+  { id: 'txn-20260109-003', accountId: 'acc-111222333' }
+];
+
+predefinedTransactions.forEach(({ id, accountId }) => {
+  const transaction = generateTransaction(accountId, id);
+  transactions[transaction.transactionId] = transaction;
+});
+
+// Initialize with some additional random mock transactions
+for (let i = 0; i < 17; i++) {
   const transaction = generateTransaction(`acc-${Math.floor(Math.random() * 5)}`);
   transactions[transaction.transactionId] = transaction;
 }

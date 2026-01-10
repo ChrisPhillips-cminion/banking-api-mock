@@ -30,6 +30,9 @@ EXPECTED_TOTAL_TESTS=0
 declare -A FAILURE_REASONS
 MAX_SAME_FAILURES=3
 
+# Array to store failure details for summary
+FAILED_TESTS_DETAILS=()
+
 ##############################################################################
 # Helper Functions
 ##############################################################################
@@ -52,13 +55,22 @@ print_success() {
     ((EXPECTED_TOTAL_TESTS++))
 }
 
+store_failure_detail() {
+    local test_name="$1"
+    local expected="$2"
+    local got="$3"
+    local endpoint="$4"
+    local curl_cmd="$5"
+    
+    FAILED_TESTS_DETAILS+=("TEST: $test_name|EXPECTED: HTTP $expected|GOT: HTTP $got|ENDPOINT: $endpoint|CURL: $curl_cmd")
+}
+
 print_failure() {
     local description="$1"
     local response="$2"
     local failure_reason="$3"
     
     echo -e "${RED}✗ FAIL: ${description}${NC}"
-    echo -e "${RED}  Response: ${response}${NC}"
     ((FAILED_TESTS++))
     ((TOTAL_TESTS++))
     ((EXPECTED_TOTAL_TESTS++))
@@ -103,7 +115,43 @@ print_summary_and_exit() {
         echo -e "  ${RED}${FAILURE_REASONS[$reason]}x${NC} - $reason"
     done
     echo ""
+    
+    print_failure_summary
     exit 1
+}
+
+print_failure_summary() {
+    if [ ${#FAILED_TESTS_DETAILS[@]} -eq 0 ]; then
+        return
+    fi
+    
+    echo ""
+    echo -e "${YELLOW}════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}Failed Tests Summary${NC}"
+    echo -e "${YELLOW}════════════════════════════════════════${NC}"
+    echo ""
+    
+    for detail in "${FAILED_TESTS_DETAILS[@]}"; do
+        IFS='|' read -ra PARTS <<< "$detail"
+        echo -e "${RED}${PARTS[0]}${NC}"
+        echo -e "  ${PARTS[1]}"
+        echo -e "  ${PARTS[2]}"
+        echo -e "  ${PARTS[3]}"
+        echo -e "  ${YELLOW}${PARTS[4]}${NC}"
+        echo ""
+    done
+    
+    echo -e "${CYAN}════════════════════════════════════════${NC}"
+    echo -e "${CYAN}Copy this prompt to fix the issues:${NC}"
+    echo -e "${CYAN}════════════════════════════════════════${NC}"
+    echo ""
+    echo "Fix the following test failures in the banking API mock:"
+    echo ""
+    for detail in "${FAILED_TESTS_DETAILS[@]}"; do
+        IFS='|' read -ra PARTS <<< "$detail"
+        echo "- ${PARTS[0]}: ${PARTS[1]}, ${PARTS[2]}"
+    done
+    echo ""
 }
 
 test_endpoint() {
@@ -158,12 +206,14 @@ test_endpoint() {
     
     if [ "$http_code" = "$expected_status" ]; then
         print_success "$description (HTTP $http_code)"
-        echo "  Response: $(echo $body | jq -c '.' 2>/dev/null || echo $body | head -c 100)"
     else
         # Create a failure reason based on the HTTP status code mismatch
         local failure_reason="HTTP_STATUS_MISMATCH_Expected_${expected_status}_Got_${http_code}"
         print_failure "$description (Expected: $expected_status, Got: $http_code)" "$body" "$failure_reason"
         echo -e "${YELLOW}  Debug: $curl_cmd${NC}"
+        
+        # Store failure details for summary
+        store_failure_detail "$description" "$expected_status" "$http_code" "$endpoint" "$curl_cmd"
     fi
     
     sleep 0.5
@@ -366,6 +416,7 @@ if [ $FAILED_TESTS -eq 0 ]; then
     exit 0
 else
     echo -e "${RED}Some tests failed! ✗${NC}"
+    print_failure_summary
     exit 1
 fi
 
